@@ -544,15 +544,21 @@ type BitbucketCredential =
   | { readonly kind: "access-token"; readonly accessToken: string }
   | { readonly kind: "api-token"; readonly email: string; readonly apiToken: string };
 
+/**
+ * Visible ASCII only. A value the HTTP stack rejects makes it throw an error quoting the whole
+ * header, and that error travels to clients as a cause, so an unusable token is treated as unset.
+ */
+const HEADER_SAFE = /^[\x21-\x7e]+$/u;
+
 function credentialFrom(input: {
   readonly accessToken: string;
   readonly email: string;
   readonly apiToken: string;
 }): BitbucketCredential | null {
-  if (input.accessToken.length > 0) {
+  if (HEADER_SAFE.test(input.accessToken)) {
     return { kind: "access-token", accessToken: input.accessToken };
   }
-  if (input.email.length > 0 && input.apiToken.length > 0) {
+  if (HEADER_SAFE.test(input.email) && HEADER_SAFE.test(input.apiToken)) {
     return { kind: "api-token", email: input.email, apiToken: input.apiToken };
   }
   return null;

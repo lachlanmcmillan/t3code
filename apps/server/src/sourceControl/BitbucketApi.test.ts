@@ -542,6 +542,26 @@ it.effect("prefers credentials saved in settings over the environment, without a
   }).pipe(Effect.provide(layer));
 });
 
+it.effect("never puts a saved token that is unsafe for an HTTP header on the wire", () => {
+  const { execute, layer } = makeLayer({
+    response: () => Response.json({ username: "bitbucket-user" }),
+  });
+
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    const settings = yield* ServerSettings.ServerSettingsService;
+
+    // Fetch would reject this header with an error quoting the token, and that error reaches
+    // clients. The unusable token is ignored, so the environment credential is used instead.
+    yield* settings.updateSettings({ bitbucket: { accessToken: "saved\ntoken" } });
+    yield* bitbucket.probeAuth;
+    assert.strictEqual(
+      execute.mock.calls.at(-1)?.[0].headers.authorization,
+      `Basic ${btoa("user@example.com:token")}`,
+    );
+  }).pipe(Effect.provide(layer));
+});
+
 it.effect("reports saved credentials as configured when Bitbucket cannot confirm them", () => {
   const { layer } = makeLayer({
     response: () => new Response(null, { status: 401 }),

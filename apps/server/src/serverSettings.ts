@@ -882,8 +882,14 @@ const make = Effect.gen(function* () {
 
       const bitbucket = { ...next.bitbucket };
       for (const field of BITBUCKET_SECRET_FIELDS) {
-        const value = bitbucket[field];
-        if (value === SECRET_REDACTED) continue;
+        let value = bitbucket[field];
+        if (value === SECRET_REDACTED) {
+          // The marker keeps what is saved. A plaintext value hand-edited into settings.json
+          // is not in the secret store yet, so move it there instead of dropping it.
+          const inline = current.bitbucket[field];
+          if (inline === SECRET_REDACTED || inline.length === 0) continue;
+          value = inline;
+        }
         if (value.length === 0 && current.bitbucket[field].length === 0) continue;
         const secretName = BITBUCKET_SECRET_NAMES[field];
         if (value.length === 0) {

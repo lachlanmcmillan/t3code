@@ -1342,6 +1342,35 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       ),
   );
 
+  it.effect(
+    "moves a hand-edited Bitbucket token into the secret store when a client echoes the marker",
+    () =>
+      Effect.gen(function* () {
+        const serverConfig = yield* ServerConfig.ServerConfig;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+        yield* fileSystem.writeFileString(
+          serverConfig.settingsPath,
+          '{"bitbucket":{"email":"me@example.com","apiToken":"hand-edited-token"}}',
+        );
+
+        // The form resends the redacted token when only the email changes.
+        const forClient = ServerSettingsModule.redactServerSettingsForClient(
+          yield* serverSettings.getSettings,
+        ).bitbucket;
+        const updated = yield* serverSettings.updateSettings({
+          bitbucket: { email: "new@example.com", apiToken: forClient.apiToken },
+        });
+
+        assert.equal(updated.bitbucket.apiToken, "hand-edited-token");
+        assert.equal((yield* serverSettings.getSettings).bitbucket.apiToken, "hand-edited-token");
+        assert.notInclude(
+          yield* fileSystem.readFileString(serverConfig.settingsPath),
+          "hand-edited-token",
+        );
+      }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
   it.effect("materializes provider secrets for terminal environment resolution", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
