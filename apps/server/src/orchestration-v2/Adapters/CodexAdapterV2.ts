@@ -5589,6 +5589,23 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
                   }),
               ),
             ),
+          // Dropping this connection's subscription lets the shared app-server
+          // shut the native thread (and its MCP servers) down once it is idle.
+          // `notLoaded` / `notSubscribed` mean there is nothing left to unload.
+          unloadThread: (unloadInput) =>
+            Effect.gen(function* () {
+              const nativeThreadId = yield* getNativeThreadId(unloadInput.providerThread);
+              yield* client.request("thread/unsubscribe", { threadId: nativeThreadId });
+            }).pipe(
+              Effect.mapError((cause) =>
+                cause._tag === "ProviderAdapterProtocolError"
+                  ? cause
+                  : toProtocolError(
+                      `Failed to unload Codex thread for provider thread ${unloadInput.providerThread.id}.`,
+                      normalizeCodexCause(cause),
+                    ),
+              ),
+            ),
           interruptTurn: (turnInput) =>
             Effect.gen(function* () {
               const [activeTurnContexts, settledTurnContexts] =

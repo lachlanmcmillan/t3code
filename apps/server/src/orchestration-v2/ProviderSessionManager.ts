@@ -3,6 +3,7 @@ import {
   ModelSelection,
   OrchestrationV2DomainEvent,
   OrchestrationV2ProviderSession,
+  type OrchestrationV2ProviderThread,
   OrchestrationV2RuntimeRequest,
   ProviderInstanceId,
   ProviderSessionId,
@@ -1764,6 +1765,7 @@ export const layerWithOptions = (
           Effect.gen(function* () {
             const key = sessionKey(input.providerSessionId);
             const currentEntry = (yield* Ref.get(sessions)).get(key);
+            let detachedProviderThreads: ReadonlyArray<OrchestrationV2ProviderThread> = [];
             if (currentEntry?.supportsMultipleProviderThreads === true) {
               const projection = yield* Effect.option(
                 projectionStore.getThreadRecords(input.threadId, [
@@ -1777,6 +1779,7 @@ export const layerWithOptions = (
                     .filter((thread) => thread.providerSessionId === input.providerSessionId)
                     .map((thread) => [thread.id, thread] as const),
                 );
+                detachedProviderThreads = [...providerThreads.values()];
                 const activeTurns = projection.value.providerTurns.filter(
                   (turn) => turn.status === "running" && providerThreads.has(turn.providerThreadId),
                 );
@@ -1865,6 +1868,27 @@ export const layerWithOptions = (
                 ...(input.detail === undefined ? {} : { detail: input.detail }),
               });
               return;
+            }
+            // The shared runtime stays up for other threads, so unload this
+            // thread's native state rather than leaving it (and its MCP
+            // servers) resident until the whole runtime is released.
+            const unloadThread = detached.value.exposedRuntime.unloadThread;
+            if (detached.value.supportsMultipleProviderThreads && unloadThread !== undefined) {
+              yield* Effect.forEach(
+                detachedProviderThreads.filter((thread) => thread.nativeThreadRef !== null),
+                (providerThread) =>
+                  unloadThread({ providerThread }).pipe(
+                    Effect.catchCause((cause) =>
+                      Effect.logWarning("orchestration-v2.driver-session.detach-unload-failed", {
+                        providerSessionId: input.providerSessionId,
+                        threadId: input.threadId,
+                        providerThreadId: providerThread.id,
+                        cause,
+                      }),
+                    ),
+                  ),
+                { concurrency: 1, discard: true },
+              );
             }
             yield* scheduleIdleRelease(input.providerSessionId);
           }).pipe(

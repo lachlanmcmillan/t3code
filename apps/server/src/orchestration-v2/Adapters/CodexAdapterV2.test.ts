@@ -1813,6 +1813,44 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     );
   }
 
+  it.effect("unsubscribes from the native thread when it is unloaded", () =>
+    Effect.gen(function* () {
+      const nativeThreadId = "unload-thread";
+      const preamble = codexReplayPreamble({
+        nativeThreadId,
+        nativeTurnId: "unused",
+        prompt: "unused",
+      });
+      const transcript = makeCodexReplayTranscript({
+        scenario: "unload-thread",
+        entries: [
+          // initialize + thread/start only; no turn runs.
+          ...preamble.slice(0, 5),
+          {
+            type: "expect_outbound",
+            label: "thread/unsubscribe",
+            frame: { id: 3, method: "thread/unsubscribe", params: { threadId: nativeThreadId } },
+          },
+          // Response shape recorded from codex app-server 0.156.1.
+          {
+            type: "emit_inbound",
+            label: "thread/unsubscribe",
+            frame: { id: 3, result: { status: "unsubscribed" } },
+          },
+        ],
+      });
+      const requests: Array<string> = [];
+      const harness = yield* makeCodexReplayHarness(
+        transcript,
+        () => Effect.void,
+        (method) => Effect.sync(() => requests.push(method)),
+      );
+      assert.isDefined(harness.runtime.unloadThread);
+      yield* harness.runtime.unloadThread!({ providerThread: harness.providerThread });
+      assert.deepEqual(requests, ["initialize", "thread/start", "thread/unsubscribe"]);
+    }).pipe(Effect.scoped, Effect.provide(Layer.merge(idAllocatorLayer, NodeServices.layer))),
+  );
+
   it.effect("waits for native start before interrupting an acknowledged queued turn", () =>
     Effect.gen(function* () {
       const nativeThreadId = "early-stop-thread";

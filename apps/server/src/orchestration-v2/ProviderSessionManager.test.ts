@@ -100,6 +100,7 @@ interface TestProviderRuntimeState {
   readonly closeCount: number;
   readonly interruptCount: number;
   readonly resumeCount: number;
+  readonly unloadedNativeThreadIds: ReadonlyArray<string>;
   readonly eventQueues: ReadonlyMap<string, Queue.Queue<ProviderAdapterV2Event, Cause.Done>>;
 }
 
@@ -108,6 +109,7 @@ const emptyState: TestProviderRuntimeState = {
   closeCount: 0,
   interruptCount: 0,
   resumeCount: 0,
+  unloadedNativeThreadIds: [],
   eventQueues: new Map(),
 };
 
@@ -326,6 +328,14 @@ function makeProviderAdapter(
             Ref.update(state, (current) => ({
               ...current,
               interruptCount: current.interruptCount + 1,
+            })),
+          unloadThread: ({ providerThread }) =>
+            Ref.update(state, (current) => ({
+              ...current,
+              unloadedNativeThreadIds: [
+                ...current.unloadedNativeThreadIds,
+                providerThread.nativeThreadRef?.nativeId ?? "",
+              ],
             })),
           respondToRuntimeRequest: () => Effect.void,
           readThreadSnapshot: () => unimplemented("readThreadSnapshot unused in test"),
@@ -2811,10 +2821,16 @@ it.effect(
         yield* resumeSecondThread;
         assert.equal((yield* Ref.get(state)).resumeCount, 4);
 
+        // The second thread has no persisted provider thread, so nothing is unloaded.
+        assert.deepEqual((yield* Ref.get(state)).unloadedNativeThreadIds, []);
+
         yield* manager.detach({ providerSessionId, threadId: firstThreadId });
         assert.isTrue(Option.isSome(yield* manager.get(providerSessionId)));
         assert.equal((yield* Ref.get(state)).closeCount, 0);
         assert.equal((yield* Ref.get(state)).interruptCount, 1);
+        // The runtime stays up for the second thread; the first thread's
+        // native state is unloaded after its turn is interrupted.
+        assert.deepEqual((yield* Ref.get(state)).unloadedNativeThreadIds, ["native-thread"]);
 
         yield* manager.detach({ providerSessionId, threadId: secondThreadId });
         yield* TestClock.adjust("1 second");
