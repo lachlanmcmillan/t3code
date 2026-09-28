@@ -47,8 +47,8 @@ function savedMethod(saved: BitbucketSettings): CredentialMethod | null {
 }
 
 /**
- * A write-only token field. A saved token shows as a filled password field; typing replaces
- * it, and leaving the field empty restores the saved one. `draft` is null until edited.
+ * A write-only token field. A saved token shows as a filled password field; focusing it starts
+ * a fresh token, and leaving that empty restores the saved one. `draft` is null until edited.
  */
 function TokenInput({
   id,
@@ -70,17 +70,10 @@ function TokenInput({
       size="sm"
       placeholder={isSaved ? undefined : "Not set"}
       value={masked ? SAVED_TOKEN_MASK : (draft ?? "")}
-      onFocus={(event) => {
-        if (masked) event.target.select();
+      onFocus={() => {
+        if (masked) onDraftChange("");
       }}
-      onChange={(event) => {
-        const value = event.target.value;
-        if (!masked) return onDraftChange(value);
-        // Typing at the end of the mask, or deleting into it, starts a fresh token.
-        if (value.startsWith(SAVED_TOKEN_MASK))
-          return onDraftChange(value.slice(SAVED_TOKEN_MASK.length));
-        onDraftChange(SAVED_TOKEN_MASK.startsWith(value) ? "" : value);
-      }}
+      onChange={(event) => onDraftChange(event.target.value)}
       onBlur={() => {
         if (isSaved && draft === "") onDraftChange(null);
       }}

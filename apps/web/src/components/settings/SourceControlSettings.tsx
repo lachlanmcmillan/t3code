@@ -597,6 +597,8 @@ export function SourceControlSettingsPanel() {
                   {item.kind === "bitbucket" ? (
                     <SettingsSearchTarget id={searchableSetting("bitbucket-credentials").id}>
                       <BitbucketCredentialsSettings
+                        // Drafts belong to one environment; switching must not carry them over.
+                        key={environmentId}
                         environmentId={environmentId}
                         onSaved={handleScan}
                       />
