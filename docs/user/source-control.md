@@ -47,13 +47,18 @@ glab auth login
 
 ### Bitbucket
 
-Open **Settings → Source Control** and expand **Bitbucket**. Enter either an access token, or an
-Atlassian account email and API token with read/write access to repositories and pull requests,
-plus user read access (`read:user:bitbucket`). Choose **Save**; the change applies right away.
+Open **Settings → Source Control**, expand **Bitbucket**, and choose how to sign in:
 
-The access token takes precedence if both are saved. Credentials are saved on the environment's
-server, so select a remote environment to configure it. Saved tokens can't be viewed again; enter a
-new one to replace it, or choose **Clear** to remove it.
+- **Access token**: a token created for one repository, project, or workspace. It can only reach
+  what it was created for.
+- **Atlassian API token**: a token for your Atlassian account, used with your account email. It can
+  reach every repository you can. Give it read/write access to repositories and pull requests, plus
+  user read access (`read:user:bitbucket`).
+
+Choose **Save**; the change applies right away, and replaces any credential saved with the other
+method. Credentials are saved on the environment's server, so select a remote environment to
+configure it. Saved tokens can't be viewed again; enter a new one to replace it, or choose
+**Remove credentials**.
 
 If no credentials are saved, T3 Code falls back to these variables in the server's environment.
 Restart the server after changing them:
