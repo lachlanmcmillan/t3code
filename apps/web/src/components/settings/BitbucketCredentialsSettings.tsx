@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { Button } from "../ui/button";
+import { Button, InlineButton } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
@@ -153,15 +153,10 @@ export function BitbucketCredentialsSettings({
         </ToggleGroup>
         <p className="max-w-2xl text-xs leading-relaxed text-muted-foreground">
           {info.description}{" "}
-          <a
-            href={info.link}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="inline-flex items-center gap-0.5 text-foreground underline-offset-2 hover:underline"
-          >
+          <InlineButton render={<a href={info.link} target="_blank" rel="noreferrer noopener" />}>
             {info.linkLabel}
             <ExternalLinkIcon aria-hidden className="size-3" />
-          </a>
+          </InlineButton>
         </p>
         {method === "access-token" ? (
           <div className="grid gap-1.5">
