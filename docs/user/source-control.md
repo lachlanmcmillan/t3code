@@ -144,7 +144,8 @@ does not show its diff, so marks are made and read on web and desktop.
 ## Troubleshooting
 
 - **Not authenticated:** run the provider's login command on the server, then rescan. For Bitbucket,
-  confirm the running server received the environment variables.
+  check the credentials saved in Settings → Source Control, or confirm the running server received
+  the environment variables.
 - **GitHub sign-in cannot be verified:** update GitHub CLI to at least 2.81.0.
 - **Push fails despite a connected account:** check the Git remote's credentials. SSH and HTTPS
   remotes can require separate setup from the hosting provider's API access.
