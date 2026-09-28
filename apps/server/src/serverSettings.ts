@@ -890,7 +890,6 @@ const make = Effect.gen(function* () {
           if (inline === SECRET_REDACTED || inline.length === 0) continue;
           value = inline;
         }
-        if (value.length === 0 && current.bitbucket[field].length === 0) continue;
         const secretName = BITBUCKET_SECRET_NAMES[field];
         if (value.length === 0) {
           changes.push({ kind: "remove", secretName, operation: "remove-secret" });

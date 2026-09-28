@@ -44,6 +44,20 @@ const makeServerSettingsLayer = () =>
     ),
   );
 
+/** Like `makeServerSettingsLayer`, but also exposes the secret store for assertions. */
+const makeServerSettingsLayerWithSecrets = () =>
+  ServerSettingsModule.layer.pipe(
+    Layer.provideMerge(ServerSecretStore.layer),
+    Layer.provideMerge(Layer.fresh(SqlitePersistenceMemory)),
+    Layer.provideMerge(
+      Layer.fresh(
+        ServerConfig.layerTest(process.cwd(), {
+          prefix: "t3code-server-settings-test-",
+        }),
+      ),
+    ),
+  );
+
 const makeFailingSecretStoreLayer = (cause: ServerSecretStore.SecretStoreError) =>
   Layer.succeed(
     ServerSecretStore.ServerSecretStore,
@@ -1325,21 +1339,23 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           ServerSettingsModule.redactServerSettingsForClient(cleared).bitbucket.accessToken,
           "",
         );
-      }).pipe(
-        Effect.provide(
-          ServerSettingsModule.layer.pipe(
-            Layer.provideMerge(ServerSecretStore.layer),
-            Layer.provideMerge(Layer.fresh(SqlitePersistenceMemory)),
-            Layer.provideMerge(
-              Layer.fresh(
-                ServerConfig.layerTest(process.cwd(), {
-                  prefix: "t3code-server-settings-test-",
-                }),
-              ),
-            ),
-          ),
-        ),
-      ),
+      }).pipe(Effect.provide(makeServerSettingsLayerWithSecrets())),
+  );
+
+  it.effect("removes a Bitbucket secret once its token is cleared by hand in settings.json", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const secrets = yield* ServerSecretStore.ServerSecretStore;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      // A token was saved, then the user deleted it from settings.json directly.
+      yield* secrets.set("bitbucket-access-token", new TextEncoder().encode("stale-token"));
+      yield* fileSystem.writeFileString(serverConfig.settingsPath, "{}");
+
+      yield* serverSettings.updateSettings({ cursorKeychainUsageEnabled: true });
+
+      assert.isTrue(Option.isNone(yield* secrets.get("bitbucket-access-token")));
+    }).pipe(Effect.provide(makeServerSettingsLayerWithSecrets())),
   );
 
   it.effect(

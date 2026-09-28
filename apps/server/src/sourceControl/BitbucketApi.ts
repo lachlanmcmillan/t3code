@@ -667,9 +667,9 @@ export const make = Effect.gen(function* () {
   const currentCredential = serverSettings.getSettings.pipe(
     Effect.map((settings) => resolveCredential(settings.bitbucket, config)),
     Effect.catch((error) =>
+      // No cause: a settings decode error can quote a hand-edited token.
       Effect.logWarning("failed to read Bitbucket credentials from settings", {
         operation: error.operation,
-        cause: error.cause,
       }).pipe(Effect.as(resolveCredential(DEFAULT_SERVER_SETTINGS.bitbucket, config))),
     ),
   );
