@@ -24,18 +24,21 @@ const METHODS: Record<
   "access-token": {
     label: "Access token",
     description:
-      "A token created for one repository, project, or workspace in its Bitbucket settings. It can only reach what it was created for.",
+      "Scoped to one repository, project, or workspace. Create it in that item's Bitbucket settings.",
     link: "https://support.atlassian.com/bitbucket-cloud/docs/access-tokens/",
-    linkLabel: "About access tokens",
+    linkLabel: "Learn more",
   },
   "api-token": {
-    label: "Atlassian API token",
+    label: "API token",
     description:
-      "A token for your Atlassian account, used with your account email. It can reach every repository you can. Give it read and write access to repositories and pull requests, plus read:user:bitbucket.",
+      "Uses your Atlassian account, so it reaches every repository you can. Give it read and write access to repositories and pull requests, and read:user:bitbucket.",
     link: "https://id.atlassian.com/manage-profile/security/api-tokens",
     linkLabel: "Create an API token",
   },
 };
+
+/** Filler for a saved token's field. A password input renders it as dots; it is never sent. */
+const SAVED_TOKEN_MASK = "saved-token-mask";
 
 function savedMethod(saved: BitbucketSettings): CredentialMethod | null {
   if (saved.accessToken.length > 0) return "access-token";
@@ -43,11 +46,46 @@ function savedMethod(saved: BitbucketSettings): CredentialMethod | null {
   return null;
 }
 
-function savedCredentialLabel(saved: BitbucketSettings): string {
-  const method = savedMethod(saved);
-  if (method === "access-token") return "Using the saved access token.";
-  if (method === "api-token") return `Using the saved API token for ${saved.email}.`;
-  return "No credentials saved. The server's T3CODE_BITBUCKET_* variables are used if set.";
+/**
+ * A write-only token field. A saved token shows as a filled password field; typing replaces
+ * it, and leaving the field empty restores the saved one. `draft` is null until edited.
+ */
+function TokenInput({
+  id,
+  isSaved,
+  draft,
+  onDraftChange,
+}: {
+  readonly id: string;
+  readonly isSaved: boolean;
+  readonly draft: string | null;
+  readonly onDraftChange: (draft: string | null) => void;
+}) {
+  const masked = isSaved && draft === null;
+  return (
+    <Input
+      id={id}
+      type="password"
+      autoComplete="off"
+      size="sm"
+      placeholder={isSaved ? undefined : "Not set"}
+      value={masked ? SAVED_TOKEN_MASK : (draft ?? "")}
+      onFocus={(event) => {
+        if (masked) event.target.select();
+      }}
+      onChange={(event) => {
+        const value = event.target.value;
+        if (!masked) return onDraftChange(value);
+        // Typing at the end of the mask, or deleting into it, starts a fresh token.
+        if (value.startsWith(SAVED_TOKEN_MASK))
+          return onDraftChange(value.slice(SAVED_TOKEN_MASK.length));
+        onDraftChange(SAVED_TOKEN_MASK.startsWith(value) ? "" : value);
+      }}
+      onBlur={() => {
+        if (isSaved && draft === "") onDraftChange(null);
+      }}
+    />
+  );
 }
 
 /**
@@ -67,38 +105,33 @@ export function BitbucketCredentialsSettings({
     label: "save Bitbucket credentials",
   });
   const [methodChoice, setMethodChoice] = useState<CredentialMethod | null>(null);
-  const [accessToken, setAccessToken] = useState("");
+  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [emailDraft, setEmailDraft] = useState<string | null>(null);
-  const [apiToken, setApiToken] = useState("");
+  const [apiToken, setApiToken] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const current = savedMethod(saved);
   const method = methodChoice ?? current ?? "access-token";
   const methodIsSaved = current === method;
-  const email = emailDraft ?? saved.email;
+  const email = (emailDraft ?? saved.email).trim();
+  const newAccessToken = accessToken?.trim() ?? "";
+  const newApiToken = apiToken?.trim() ?? "";
   const info = METHODS[method];
 
   // Saving one method clears the other, so a hidden credential never wins over the visible one.
   const patch: BitbucketSettings | null =
     method === "access-token"
-      ? accessToken.trim()
-        ? { accessToken: accessToken.trim(), email: "", apiToken: "" }
+      ? newAccessToken
+        ? { accessToken: newAccessToken, email: "", apiToken: "" }
         : null
-      : email.trim() && (apiToken.trim() || saved.apiToken.length > 0)
-        ? {
-            accessToken: "",
-            email: email.trim(),
-            // Omitting a token would clear it; resend the saved marker to keep it.
-            apiToken: apiToken.trim() || saved.apiToken,
-          }
+      : email && (newApiToken || saved.apiToken)
+        ? // Resending the saved token's redacted value keeps it.
+          { accessToken: "", email, apiToken: newApiToken || saved.apiToken }
         : null;
   const canSave =
     patch !== null &&
-    (method === "access-token" ||
-      !methodIsSaved ||
-      apiToken.trim() !== "" ||
-      email.trim() !== saved.email);
+    (method === "access-token" || !methodIsSaved || newApiToken !== "" || email !== saved.email);
 
-  const save = async (next: Partial<BitbucketSettings>) => {
+  const save = async (next: BitbucketSettings) => {
     setSaving(true);
     try {
       const result = await updateSettings({
@@ -106,8 +139,8 @@ export function BitbucketCredentialsSettings({
         input: { patch: { bitbucket: next } },
       });
       if (result._tag === "Success") {
-        setAccessToken("");
-        setApiToken("");
+        setAccessToken(null);
+        setApiToken(null);
         setEmailDraft(null);
         onSaved();
       }
@@ -124,10 +157,6 @@ export function BitbucketCredentialsSettings({
         if (canSave && patch) void save(patch);
       }}
     >
-      <p className="text-xs leading-relaxed text-muted-foreground">
-        {savedCredentialLabel(saved)} Tokens are stored on this server and can't be viewed after
-        saving.
-      </p>
       <ToggleGroup
         aria-label="Bitbucket sign-in method"
         variant="segmented"
@@ -155,14 +184,11 @@ export function BitbucketCredentialsSettings({
       {method === "access-token" ? (
         <div className="grid gap-1.5">
           <Label htmlFor={`bitbucket-access-token-${environmentId}`}>Access token</Label>
-          <Input
+          <TokenInput
             id={`bitbucket-access-token-${environmentId}`}
-            type="password"
-            autoComplete="off"
-            size="sm"
-            placeholder={methodIsSaved ? "Saved. Enter a new token to replace it" : "Not set"}
-            value={accessToken}
-            onChange={(event) => setAccessToken(event.target.value)}
+            isSaved={methodIsSaved}
+            draft={accessToken}
+            onDraftChange={setAccessToken}
           />
         </div>
       ) : (
@@ -175,45 +201,44 @@ export function BitbucketCredentialsSettings({
               autoComplete="off"
               size="sm"
               placeholder="you@example.com"
-              value={email}
+              value={emailDraft ?? saved.email}
               onChange={(event) => setEmailDraft(event.target.value)}
             />
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor={`bitbucket-api-token-${environmentId}`}>API token</Label>
-            <Input
+            <TokenInput
               id={`bitbucket-api-token-${environmentId}`}
-              type="password"
-              autoComplete="off"
-              size="sm"
-              placeholder={
-                saved.apiToken.length > 0 ? "Saved. Enter a new token to replace it" : "Not set"
-              }
-              value={apiToken}
-              onChange={(event) => setApiToken(event.target.value)}
+              isSaved={methodIsSaved}
+              draft={apiToken}
+              onDraftChange={setApiToken}
             />
           </div>
         </>
       )}
-      {current !== null && !methodIsSaved ? (
+      <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
-          Saving replaces the saved {METHODS[current].label.toLowerCase()}.
+          {current === null
+            ? "Without a saved token, the server falls back to its T3CODE_BITBUCKET_* environment variables."
+            : methodIsSaved
+              ? null
+              : `Saving replaces your ${METHODS[current].label.toLowerCase()}.`}
         </p>
-      ) : null}
-      <div className="flex justify-end gap-2">
-        {current !== null ? (
-          <Button
-            size="xs"
-            variant="outline"
-            disabled={saving}
-            onClick={() => void save({ accessToken: "", email: "", apiToken: "" })}
-          >
-            Remove credentials
+        <div className="flex shrink-0 gap-2">
+          {current !== null ? (
+            <Button
+              size="xs"
+              variant="outline"
+              disabled={saving}
+              onClick={() => void save({ accessToken: "", email: "", apiToken: "" })}
+            >
+              Remove
+            </Button>
+          ) : null}
+          <Button type="submit" size="xs" disabled={!canSave || saving}>
+            Save
           </Button>
-        ) : null}
-        <Button type="submit" size="xs" disabled={!canSave || saving}>
-          Save
-        </Button>
+        </div>
       </div>
     </form>
   );

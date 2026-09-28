@@ -559,7 +559,7 @@ it.effect("reports saved credentials as configured when Bitbucket cannot confirm
       status: "unknown",
       account: Option.none(),
       host: Option.some("bitbucket.org"),
-      detail: Option.some("Bitbucket access token is configured."),
+      detail: Option.some("An access token is configured."),
     });
   }).pipe(Effect.provide(layer));
 });

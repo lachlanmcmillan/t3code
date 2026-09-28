@@ -582,7 +582,7 @@ function authFromCredential(credential: BitbucketCredential | null): SourceContr
       status: "unknown",
       account: Option.none(),
       host: Option.some("bitbucket.org"),
-      detail: Option.some("Bitbucket access token is configured."),
+      detail: Option.some("An access token is configured."),
     };
   }
 
@@ -591,7 +591,7 @@ function authFromCredential(credential: BitbucketCredential | null): SourceContr
       status: "unknown",
       account: Option.some(credential.email),
       host: Option.some("bitbucket.org"),
-      detail: Option.some("Bitbucket API token is configured."),
+      detail: Option.some("An API token is configured."),
     };
   }
 
@@ -600,7 +600,7 @@ function authFromCredential(credential: BitbucketCredential | null): SourceContr
     account: Option.none(),
     host: Option.some("bitbucket.org"),
     detail: Option.some(
-      "Add Bitbucket credentials in Settings → Source Control, or set T3CODE_BITBUCKET_EMAIL and T3CODE_BITBUCKET_API_TOKEN, or T3CODE_BITBUCKET_ACCESS_TOKEN.",
+      "Add a Bitbucket token in Settings → Source Control, or set the T3CODE_BITBUCKET_* environment variables on the server.",
     ),
   };
 }

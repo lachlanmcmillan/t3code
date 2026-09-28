@@ -51,14 +51,14 @@ Open **Settings → Source Control**, expand **Bitbucket**, and choose how to si
 
 - **Access token**: a token created for one repository, project, or workspace. It can only reach
   what it was created for.
-- **Atlassian API token**: a token for your Atlassian account, used with your account email. It can
+- **API token**: an Atlassian API token for your account, used with your account email. It can
   reach every repository you can. Give it read/write access to repositories and pull requests, plus
   user read access (`read:user:bitbucket`).
 
 Choose **Save**; the change applies right away, and replaces any credential saved with the other
 method. Credentials are saved on the environment's server, so select a remote environment to
 configure it. Saved tokens can't be viewed again; enter a new one to replace it, or choose
-**Remove credentials**.
+**Remove**.
 
 If no credentials are saved, T3 Code falls back to these variables in the server's environment.
 Restart the server after changing them:
