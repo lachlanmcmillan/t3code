@@ -568,6 +568,35 @@ const make = Effect.gen(function* () {
     ),
   );
 
+  /**
+   * Moves Bitbucket tokens hand-edited into settings.json into the secret store as they load,
+   * so plaintext does not stay on disk. If the store is unavailable, the token keeps working
+   * from the file and the move is retried on the next load.
+   */
+  const moveInlineBitbucketTokens = (settings: ServerSettings) =>
+    Effect.gen(function* () {
+      const bitbucket = { ...settings.bitbucket };
+      let moved = false;
+      for (const field of BITBUCKET_SECRET_FIELDS) {
+        const value = bitbucket[field];
+        if (value.length === 0 || value === SECRET_REDACTED) continue;
+        const stored = yield* secretStore
+          .set(BITBUCKET_SECRET_NAMES[field], textEncoder.encode(value))
+          .pipe(
+            Effect.as(true),
+            Effect.catch(() =>
+              Effect.logWarning("failed to move a Bitbucket token into the secret store", {
+                field,
+              }).pipe(Effect.as(false)),
+            ),
+          );
+        if (!stored) continue;
+        bitbucket[field] = SECRET_REDACTED;
+        moved = true;
+      }
+      return moved ? { ...settings, bitbucket } : settings;
+    });
+
   const loadSettingsFromDisk = Effect.gen(function* () {
     let settings = DEFAULT_SERVER_SETTINGS;
     let persisted: typeof PersistedOptionalProviderSettings.Type = {};
@@ -652,10 +681,12 @@ const make = Effect.gen(function* () {
     const folded = settingsFileTrusted
       ? foldLegacyProjectSettings(loaded, legacyProjectRows)
       : loaded;
-    if (folded !== loaded) {
-      yield* writeSettingsAtomically(folded);
+    // Only rewrite a file that decoded cleanly; an untrusted one stays for the user to repair.
+    const migrated = settingsFileTrusted ? yield* moveInlineBitbucketTokens(folded) : folded;
+    if (migrated !== loaded) {
+      yield* writeSettingsAtomically(migrated);
     }
-    return folded;
+    return migrated;
   });
 
   const settingsCache = yield* Cache.make<typeof cacheKey, ServerSettings, ServerSettingsError>({

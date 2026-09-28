@@ -1358,6 +1358,33 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(makeServerSettingsLayerWithSecrets())),
   );
 
+  it.effect("moves a hand-edited Bitbucket token into the secret store when settings load", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const secrets = yield* ServerSecretStore.ServerSecretStore;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        '{"bitbucket":{"accessToken":"hand-edited-token"}}',
+      );
+
+      // Loading alone moves it: no settings update is needed.
+      const loaded = yield* serverSettings.getSettings;
+
+      assert.equal(loaded.bitbucket.accessToken, "hand-edited-token");
+      assert.notInclude(
+        yield* fileSystem.readFileString(serverConfig.settingsPath),
+        "hand-edited-token",
+      );
+      const stored = yield* secrets.get("bitbucket-access-token");
+      assert.equal(
+        Option.isSome(stored) ? new TextDecoder().decode(stored.value) : null,
+        "hand-edited-token",
+      );
+    }).pipe(Effect.provide(makeServerSettingsLayerWithSecrets())),
+  );
+
   it.effect(
     "moves a hand-edited Bitbucket token into the secret store when a client echoes the marker",
     () =>
