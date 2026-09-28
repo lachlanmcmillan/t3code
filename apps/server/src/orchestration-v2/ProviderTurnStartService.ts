@@ -543,34 +543,51 @@ export const layer: Layer.Layer<
               }),
         }),
       );
+      // The last start attempt fails the run with the provider's own reason
+      // instead of leaving it `starting` after the effect gives up. A run that
+      // already left `starting` is not overwritten, and a failed write returns
+      // its error to the effect worker.
+      const settleStartFailure = (failed: {
+        readonly signal: string;
+        readonly title: string;
+        readonly error: Error;
+      }) =>
+        Effect.gen(function* () {
+          const nestedCause = "cause" in failed.error ? failed.error.cause : undefined;
+          yield* settleRunBeforeStart({
+            signal: failed.signal,
+            status: "failed",
+            now: yield* DateTime.now,
+            providerInstanceId: run.providerInstanceId,
+            itemProviderThreadId: providerThread.id,
+            item: {
+              type: "error",
+              title: failed.title,
+              failure: makeProviderFailure({
+                cause: failed.error,
+                message:
+                  nestedCause instanceof Error
+                    ? nestedCause.message
+                    : typeof nestedCause === "string"
+                      ? nestedCause
+                      : failed.error.message,
+                class: "provider_error",
+              }),
+            },
+          });
+        });
       if (sessionResult._tag === "Failure") {
         if (input.willRetry === true) return yield* sessionResult.failure;
-        const failedAt = yield* DateTime.now;
-        const openError = sessionResult.failure;
-        const nestedCause = "cause" in openError ? openError.cause : undefined;
-        const failure = makeProviderFailure({
-          cause: openError,
-          message:
-            nestedCause instanceof Error
-              ? nestedCause.message
-              : typeof nestedCause === "string"
-                ? nestedCause
-                : openError.message,
-          class: "provider_error",
-        });
-        yield* settleRunBeforeStart({
+        yield* settleStartFailure({
           signal: "provider-session-open-failure",
-          status: "failed",
-          now: failedAt,
-          providerInstanceId: run.providerInstanceId,
-          itemProviderThreadId: providerThread.id,
-          item: { type: "error", title: "Provider session failed to open", failure },
+          title: "Provider session failed to open",
+          error: sessionResult.failure,
         });
         return;
       }
       const session = sessionResult.success;
       let effectiveHandoffs = handoffs;
-      const loadedProviderThread = yield* Effect.gen(function* () {
+      const loadResult = yield* Effect.gen(function* () {
         if (nativeForkTransfer !== undefined) {
           const sourceProjection = yield* projectionStore.getThreadRecords(
             nativeForkTransfer.sourceThreadId,
@@ -730,7 +747,17 @@ export const layer: Layer.Layer<
           ],
         });
         return replacement;
-      });
+      }).pipe(Effect.result);
+      if (loadResult._tag === "Failure") {
+        if (input.willRetry === true) return yield* loadResult.failure;
+        yield* settleStartFailure({
+          signal: "provider-thread-load-failure",
+          title: "Provider turn failed to start",
+          error: loadResult.failure,
+        });
+        return;
+      }
+      const loadedProviderThread = loadResult.success;
       if (!(yield* isCurrentAttemptInStatus("starting"))) {
         return;
       }
