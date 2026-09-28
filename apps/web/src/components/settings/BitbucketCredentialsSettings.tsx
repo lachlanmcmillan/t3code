@@ -37,19 +37,13 @@ const METHODS: Record<
   },
 };
 
-/** Filler for a saved token's field. A password input renders it as dots; it is never sent. */
-const SAVED_TOKEN_MASK = "saved-token-mask";
-
 function savedMethod(saved: BitbucketSettings): CredentialMethod | null {
   if (saved.accessToken.length > 0) return "access-token";
   if (saved.email.length > 0 && saved.apiToken.length > 0) return "api-token";
   return null;
 }
 
-/**
- * A write-only token field. A saved token shows as a filled password field; focusing it starts
- * a fresh token, and leaving that empty restores the saved one. `draft` is null until edited.
- */
+/** A write-only token field. It never shows the saved token; typing a new one replaces it. */
 function TokenInput({
   id,
   isSaved,
@@ -58,25 +52,18 @@ function TokenInput({
 }: {
   readonly id: string;
   readonly isSaved: boolean;
-  readonly draft: string | null;
-  readonly onDraftChange: (draft: string | null) => void;
+  readonly draft: string;
+  readonly onDraftChange: (draft: string) => void;
 }) {
-  const masked = isSaved && draft === null;
   return (
     <Input
       id={id}
       type="password"
       autoComplete="off"
       size="sm"
-      placeholder={isSaved ? undefined : "Not set"}
-      value={masked ? SAVED_TOKEN_MASK : (draft ?? "")}
-      onFocus={() => {
-        if (masked) onDraftChange("");
-      }}
+      placeholder={isSaved ? "Stored secret, enter a new value to replace" : "Not set"}
+      value={draft}
       onChange={(event) => onDraftChange(event.target.value)}
-      onBlur={() => {
-        if (isSaved && draft === "") onDraftChange(null);
-      }}
     />
   );
 }
@@ -98,16 +85,16 @@ export function BitbucketCredentialsSettings({
     label: "save Bitbucket credentials",
   });
   const [methodChoice, setMethodChoice] = useState<CredentialMethod | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [accessToken, setAccessToken] = useState("");
   const [emailDraft, setEmailDraft] = useState<string | null>(null);
-  const [apiToken, setApiToken] = useState<string | null>(null);
+  const [apiToken, setApiToken] = useState("");
   const [saving, setSaving] = useState(false);
   const current = savedMethod(saved);
   const method = methodChoice ?? current ?? "access-token";
   const methodIsSaved = current === method;
   const email = (emailDraft ?? saved.email).trim();
-  const newAccessToken = accessToken?.trim() ?? "";
-  const newApiToken = apiToken?.trim() ?? "";
+  const newAccessToken = accessToken.trim();
+  const newApiToken = apiToken.trim();
   const info = METHODS[method];
 
   // Saving one method clears the other, so a hidden credential never wins over the visible one.
@@ -132,8 +119,8 @@ export function BitbucketCredentialsSettings({
         input: { patch: { bitbucket: next } },
       });
       if (result._tag === "Success") {
-        setAccessToken(null);
-        setApiToken(null);
+        setAccessToken("");
+        setApiToken("");
         setEmailDraft(null);
         onSaved();
       }
