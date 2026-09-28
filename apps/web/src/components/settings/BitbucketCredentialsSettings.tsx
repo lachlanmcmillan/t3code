@@ -137,89 +137,92 @@ export function BitbucketCredentialsSettings({
         if (canSave && patch) void save(patch);
       }}
     >
-      <ToggleGroup
-        aria-label="Bitbucket sign-in method"
-        variant="segmented"
-        value={[method]}
-        onValueChange={(next) => {
-          const value = next[0];
-          if (value === "access-token" || value === "api-token") setMethodChoice(value);
-        }}
-      >
-        <Toggle value="access-token">{METHODS["access-token"].label}</Toggle>
-        <Toggle value="api-token">{METHODS["api-token"].label}</Toggle>
-      </ToggleGroup>
-      <p className="max-w-2xl text-xs leading-relaxed text-muted-foreground">
-        {info.description}{" "}
-        <a
-          href={info.link}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="inline-flex items-center gap-0.5 text-foreground underline-offset-2 hover:underline"
+      {/* Locked while saving: a successful save clears the drafts, which would drop edits made mid-request. */}
+      <fieldset disabled={saving} className="contents">
+        <ToggleGroup
+          aria-label="Bitbucket sign-in method"
+          variant="segmented"
+          value={[method]}
+          onValueChange={(next) => {
+            const value = next[0];
+            if (value === "access-token" || value === "api-token") setMethodChoice(value);
+          }}
         >
-          {info.linkLabel}
-          <ExternalLinkIcon aria-hidden className="size-3" />
-        </a>
-      </p>
-      {method === "access-token" ? (
-        <div className="grid gap-1.5">
-          <Label htmlFor={`bitbucket-access-token-${environmentId}`}>Access token</Label>
-          <TokenInput
-            id={`bitbucket-access-token-${environmentId}`}
-            isSaved={methodIsSaved}
-            draft={accessToken}
-            onDraftChange={setAccessToken}
-          />
-        </div>
-      ) : (
-        <>
-          <div className="grid gap-1.5">
-            <Label htmlFor={`bitbucket-email-${environmentId}`}>Atlassian account email</Label>
-            <Input
-              id={`bitbucket-email-${environmentId}`}
-              type="email"
-              autoComplete="off"
-              size="sm"
-              placeholder="you@example.com"
-              value={emailDraft ?? saved.email}
-              onChange={(event) => setEmailDraft(event.target.value)}
-            />
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor={`bitbucket-api-token-${environmentId}`}>API token</Label>
-            <TokenInput
-              id={`bitbucket-api-token-${environmentId}`}
-              isSaved={methodIsSaved}
-              draft={apiToken}
-              onDraftChange={setApiToken}
-            />
-          </div>
-        </>
-      )}
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">
-          {current === null
-            ? "Without a saved token, the server falls back to its T3CODE_BITBUCKET_* environment variables."
-            : methodIsSaved
-              ? null
-              : `Saving replaces your ${METHODS[current].label.toLowerCase()}.`}
+          <Toggle value="access-token">{METHODS["access-token"].label}</Toggle>
+          <Toggle value="api-token">{METHODS["api-token"].label}</Toggle>
+        </ToggleGroup>
+        <p className="max-w-2xl text-xs leading-relaxed text-muted-foreground">
+          {info.description}{" "}
+          <a
+            href={info.link}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="inline-flex items-center gap-0.5 text-foreground underline-offset-2 hover:underline"
+          >
+            {info.linkLabel}
+            <ExternalLinkIcon aria-hidden className="size-3" />
+          </a>
         </p>
-        <div className="flex shrink-0 gap-2">
-          {current !== null ? (
-            <Button
-              size="xs"
-              variant="outline"
-              disabled={saving}
-              onClick={() => void save({ accessToken: "", email: "", apiToken: "" })}
-            >
-              Remove
+        {method === "access-token" ? (
+          <div className="grid gap-1.5">
+            <Label htmlFor={`bitbucket-access-token-${environmentId}`}>Access token</Label>
+            <TokenInput
+              id={`bitbucket-access-token-${environmentId}`}
+              isSaved={methodIsSaved}
+              draft={accessToken}
+              onDraftChange={setAccessToken}
+            />
+          </div>
+        ) : (
+          <>
+            <div className="grid gap-1.5">
+              <Label htmlFor={`bitbucket-email-${environmentId}`}>Atlassian account email</Label>
+              <Input
+                id={`bitbucket-email-${environmentId}`}
+                type="email"
+                autoComplete="off"
+                size="sm"
+                placeholder="you@example.com"
+                value={emailDraft ?? saved.email}
+                onChange={(event) => setEmailDraft(event.target.value)}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor={`bitbucket-api-token-${environmentId}`}>API token</Label>
+              <TokenInput
+                id={`bitbucket-api-token-${environmentId}`}
+                isSaved={methodIsSaved}
+                draft={apiToken}
+                onDraftChange={setApiToken}
+              />
+            </div>
+          </>
+        )}
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">
+            {current === null
+              ? "Without a saved token, the server falls back to its T3CODE_BITBUCKET_* environment variables."
+              : methodIsSaved
+                ? null
+                : `Saving replaces your ${METHODS[current].label.toLowerCase()}.`}
+          </p>
+          <div className="flex shrink-0 gap-2">
+            {current !== null ? (
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={saving}
+                onClick={() => void save({ accessToken: "", email: "", apiToken: "" })}
+              >
+                Remove
+              </Button>
+            ) : null}
+            <Button type="submit" size="xs" disabled={!canSave || saving}>
+              Save
             </Button>
-          ) : null}
-          <Button type="submit" size="xs" disabled={!canSave || saving}>
-            Save
-          </Button>
+          </div>
         </div>
-      </div>
+      </fieldset>
     </form>
   );
 }
