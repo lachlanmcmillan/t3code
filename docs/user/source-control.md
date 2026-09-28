@@ -47,22 +47,23 @@ glab auth login
 
 ### Bitbucket
 
-Set an access token in the server's environment:
+Open **Settings → Source Control** and expand **Bitbucket**. Enter either an access token, or an
+Atlassian account email and API token with read/write access to repositories and pull requests,
+plus user read access (`read:user:bitbucket`). Choose **Save**; the change applies right away.
+
+The access token takes precedence if both are saved. Credentials are saved on the environment's
+server, so select a remote environment to configure it. Saved tokens can't be viewed again; enter a
+new one to replace it, or choose **Clear** to remove it.
+
+If no credentials are saved, T3 Code falls back to these variables in the server's environment.
+Restart the server after changing them:
 
 ```bash
 export T3CODE_BITBUCKET_ACCESS_TOKEN="your-access-token"
-```
-
-Or use an Atlassian account email and API token with read/write access to repositories and pull
-requests, plus user read access (`read:user:bitbucket`):
-
-```bash
+# or
 export T3CODE_BITBUCKET_EMAIL="you@example.com"
 export T3CODE_BITBUCKET_API_TOKEN="your-token"
 ```
-
-The access token takes precedence if both are configured. Restart the server after changing these
-variables.
 
 ### Azure DevOps
 

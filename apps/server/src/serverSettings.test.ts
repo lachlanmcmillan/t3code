@@ -1278,6 +1278,70 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
+  it.effect(
+    "keeps Bitbucket tokens in the secret store and tells clients only that one is set",
+    () =>
+      Effect.gen(function* () {
+        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+        const secrets = yield* ServerSecretStore.ServerSecretStore;
+        const serverConfig = yield* ServerConfig.ServerConfig;
+        const fileSystem = yield* FileSystem.FileSystem;
+
+        const saved = yield* serverSettings.updateSettings({
+          bitbucket: { email: "me@example.com", accessToken: "bb-access", apiToken: "bb-api" },
+        });
+        assert.deepEqual(saved.bitbucket, {
+          email: "me@example.com",
+          accessToken: "bb-access",
+          apiToken: "bb-api",
+        });
+
+        const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
+        assert.notInclude(raw, "bb-access");
+        assert.notInclude(raw, "bb-api");
+        assert.include(raw, "me@example.com");
+
+        const forClient = ServerSettingsModule.redactServerSettingsForClient(saved).bitbucket;
+        assert.equal(forClient.email, "me@example.com");
+        assert.notInclude(forClient.accessToken, "bb-access");
+        assert.notInclude(forClient.apiToken, "bb-api");
+        assert.isAbove(forClient.accessToken.length, 0);
+        assert.isAbove(forClient.apiToken.length, 0);
+
+        // A client echoing the redacted values back, or omitting them, keeps the saved tokens.
+        yield* serverSettings.updateSettings({ bitbucket: forClient });
+        yield* serverSettings.updateSettings({ bitbucket: { email: "other@example.com" } });
+        assert.deepEqual((yield* serverSettings.getSettings).bitbucket, {
+          email: "other@example.com",
+          accessToken: "bb-access",
+          apiToken: "bb-api",
+        });
+
+        const cleared = yield* serverSettings.updateSettings({ bitbucket: { accessToken: "" } });
+        assert.equal(cleared.bitbucket.accessToken, "");
+        assert.equal(cleared.bitbucket.apiToken, "bb-api");
+        assert.isTrue(Option.isNone(yield* secrets.get("bitbucket-access-token")));
+        assert.equal(
+          ServerSettingsModule.redactServerSettingsForClient(cleared).bitbucket.accessToken,
+          "",
+        );
+      }).pipe(
+        Effect.provide(
+          ServerSettingsModule.layer.pipe(
+            Layer.provideMerge(ServerSecretStore.layer),
+            Layer.provideMerge(Layer.fresh(SqlitePersistenceMemory)),
+            Layer.provideMerge(
+              Layer.fresh(
+                ServerConfig.layerTest(process.cwd(), {
+                  prefix: "t3code-server-settings-test-",
+                }),
+              ),
+            ),
+          ),
+        ),
+      ),
+  );
+
   it.effect("materializes provider secrets for terminal environment resolution", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
