@@ -158,6 +158,11 @@ function makeLocalCommandHarness(input: {
   readonly openFailure?: unknown;
   /** Opens the session, then fails loading its provider thread. */
   readonly ensureThreadFailure?: unknown;
+  /**
+   * Resumes a thread that has a native ref: resume fails, the fresh-thread
+   * fallback succeeds, then reading history for its handoff fails.
+   */
+  readonly historyReadFailureAfterFallback?: unknown;
   readonly interruptOpen?: boolean;
   readonly interruptRunBeforeOpenFailure?: boolean;
   readonly writeFailure?: unknown;
@@ -332,6 +337,19 @@ function makeLocalCommandHarness(input: {
     checkpoints: [],
     updatedAt: now,
   };
+  if ("historyReadFailureAfterFallback" in input) {
+    const nativeThreadRef = {
+      driver: providerThread.driver,
+      nativeId: "native-resume-thread",
+      strength: "strong" as const,
+    };
+    projection = {
+      ...projection,
+      providerThreads: projection.providerThreads.map((candidate) =>
+        candidate.id === providerThreadId ? { ...candidate, nativeThreadRef } : candidate,
+      ),
+    };
+  }
   const events: Array<OrchestrationV2DomainEvent> = [];
   const interruptRun = () => {
     projection = {
@@ -358,26 +376,40 @@ function makeLocalCommandHarness(input: {
       ),
     ),
   );
+  const resumeFallbackSession = {
+    driver: providerThread.driver,
+    resumeThread: () =>
+      Effect.fail(
+        new ProviderAdapterEventStreamError({
+          driver: providerThread.driver,
+          providerSessionId,
+          cause: "native thread is gone",
+        }),
+      ),
+    ensureThread: () => Effect.succeed(providerThread),
+  };
   const open = vi.fn(() =>
     input.interruptOpen === true
       ? Effect.interrupt
-      : "ensureThreadFailure" in input
-        ? Effect.succeed({ driver: providerThread.driver, ensureThread } as never)
-        : "openFailure" in input
-          ? Effect.sync(() => {
-              if (input.interruptRunBeforeOpenFailure === true) interruptRun();
-            }).pipe(
-              Effect.andThen(
-                Effect.fail(
-                  new ProviderSessionManager.ProviderSessionOpenError({
-                    instanceId: newInstanceId,
-                    providerSessionId,
-                    cause: input.openFailure,
-                  }),
+      : "historyReadFailureAfterFallback" in input
+        ? Effect.succeed(resumeFallbackSession as never)
+        : "ensureThreadFailure" in input
+          ? Effect.succeed({ driver: providerThread.driver, ensureThread } as never)
+          : "openFailure" in input
+            ? Effect.sync(() => {
+                if (input.interruptRunBeforeOpenFailure === true) interruptRun();
+              }).pipe(
+                Effect.andThen(
+                  Effect.fail(
+                    new ProviderSessionManager.ProviderSessionOpenError({
+                      instanceId: newInstanceId,
+                      providerSessionId,
+                      cause: input.openFailure,
+                    }),
+                  ),
                 ),
-              ),
-            )
-          : Effect.die("A local command must not open a native session."),
+              )
+            : Effect.die("A local command must not open a native session."),
   );
   const startRootRun = vi.fn(() => Effect.die("A local command must not start a native turn."));
   const tryHandlePromptCommand = vi.fn(() =>
@@ -418,7 +450,9 @@ function makeLocalCommandHarness(input: {
   const layer = ProviderTurnStart.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
-        Layer.mock(ContextHandoffService.ContextHandoffServiceV2)({}),
+        Layer.mock(ContextHandoffService.ContextHandoffServiceV2)({
+          prepareProviderHandoff: () => Effect.die("history read must fail first"),
+        }),
         Layer.mock(EventSink.EventSinkV2)({ writeIfRunCurrent }),
         IdAllocator.layer,
         FileSystem.layerNoop({}),
@@ -443,6 +477,13 @@ function makeLocalCommandHarness(input: {
                   (m.text.trim().toLowerCase() !== "/compact" || m.attachments.length > 0),
               ),
             }),
+          getTurnStartHistory: () =>
+            Effect.fail(
+              new ProjectionStore.ProjectionStoreReadError({
+                threadId,
+                cause: input.historyReadFailureAfterFallback,
+              }),
+            ),
         }),
         Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({ open }),
         Layer.mock(ProviderAuthService)({ tryHandlePromptCommand }),
@@ -637,6 +678,27 @@ effectIt.effect("keeps a thread-load failure retryable when terminal persistence
     expect(harness.projection().runs.at(-1)?.status).toBe("starting");
     expect(harness.events).toEqual([]);
   }),
+);
+
+effectIt.effect(
+  "keeps a store failure after the provider loaded the thread typed and retryable",
+  () =>
+    Effect.gen(function* () {
+      const harness = makeLocalCommandHarness({
+        text: "Continue",
+        historyReadFailureAfterFallback: new Error("database unavailable"),
+      });
+
+      const error = yield* harness.start.pipe(Effect.flip);
+
+      // The provider succeeded; the failing stage is the projection read, so
+      // the run is not failed as a provider error on the last attempt.
+      expect(error._tag).toBe("ProviderTurnStartError");
+      expect((error.cause as { _tag?: string } | undefined)?._tag).toBe("ProjectionStoreReadError");
+      expect(harness.writeIfRunCurrent).not.toHaveBeenCalled();
+      expect(harness.projection().runs.at(-1)?.status).toBe("starting");
+      expect(harness.events).toEqual([]);
+    }),
 );
 
 effectIt.effect("does not overwrite a run interrupted while its thread loads", () =>

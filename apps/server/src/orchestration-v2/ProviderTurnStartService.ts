@@ -37,6 +37,7 @@ import {
 import { deliverContextHandoffs } from "./ContextHandoffDelivery.ts";
 import {
   ProviderAdapterTurnStartError,
+  type ProviderAdapterV2Error,
   type ProviderAdapterV2HistoricalContext,
   type ProviderAdapterV2SessionRuntime,
 } from "./ProviderAdapter.ts";
@@ -586,8 +587,24 @@ export const layer: Layer.Layer<
         return;
       }
       const session = sessionResult.success;
+      // Only the provider's own thread load fails the run on the last attempt;
+      // store, id and handoff failures around it keep their typed errors.
+      const loadFromProvider = (
+        load: Effect.Effect<OrchestrationV2ProviderThread, ProviderAdapterV2Error>,
+      ) =>
+        Effect.gen(function* () {
+          const loaded = yield* Effect.result(load);
+          if (loaded._tag === "Success") return loaded.success;
+          if (input.willRetry === true) return yield* loaded.failure;
+          yield* settleStartFailure({
+            signal: "provider-thread-load-failure",
+            title: "Provider turn failed to start",
+            error: loaded.failure,
+          });
+          return undefined;
+        });
       let effectiveHandoffs = handoffs;
-      const loadResult = yield* Effect.gen(function* () {
+      const loadedProviderThread = yield* Effect.gen(function* () {
         if (nativeForkTransfer !== undefined) {
           const sourceProjection = yield* projectionStore.getThreadRecords(
             nativeForkTransfer.sourceThreadId,
@@ -613,27 +630,33 @@ export const layer: Layer.Layer<
               cause: `Native fork transfer ${nativeForkTransfer.id} has no source provider execution.`,
             });
           }
-          return yield* session.forkThread({
-            sourceProviderThread,
-            sourceProviderTurns: sourceProjection.providerTurns,
-            targetThreadId: projection.thread.id,
-            modelSelection: run.modelSelection,
-            runtimePolicy: resolvedRuntimePolicy,
-            ...(sourceProviderTurn === undefined ? {} : { providerTurnId: sourceProviderTurn.id }),
-          });
+          return yield* loadFromProvider(
+            session.forkThread({
+              sourceProviderThread,
+              sourceProviderTurns: sourceProjection.providerTurns,
+              targetThreadId: projection.thread.id,
+              modelSelection: run.modelSelection,
+              runtimePolicy: resolvedRuntimePolicy,
+              ...(sourceProviderTurn === undefined
+                ? {}
+                : { providerTurnId: sourceProviderTurn.id }),
+            }),
+          );
         }
         if (providerThread.nativeThreadRef === null) {
           // Hand the run's provider thread to the adapter so it adopts this
           // row's identity when attaching native state. An adapter that mints
           // its own row instead leaves two live rows per app thread, and
           // `activeProviderThreadId` then flaps between them on every update.
-          return yield* session.ensureThread({
-            threadId: projection.thread.id,
-            modelSelection: run.modelSelection,
-            runtimePolicy: resolvedRuntimePolicy,
-            providerSessionId,
-            existingProviderThread: providerThread,
-          });
+          return yield* loadFromProvider(
+            session.ensureThread({
+              threadId: projection.thread.id,
+              modelSelection: run.modelSelection,
+              runtimePolicy: resolvedRuntimePolicy,
+              providerSessionId,
+              existingProviderThread: providerThread,
+            }),
+          );
         }
         const uncertainDelivery = projection.contextHandoffs.some(
           (handoff) =>
@@ -670,16 +693,19 @@ export const layer: Layer.Layer<
           reason: uncertainDelivery ? "uncertain_history_delivery" : "resume_failed",
           errorTag: resumed.failure._tag,
         });
-        const replacement = yield* session.ensureThread({
-          threadId: projection.thread.id,
-          modelSelection: run.modelSelection,
-          runtimePolicy: resolvedRuntimePolicy,
-          providerSessionId,
-          // The native ref is dropped so the adapter binds a fresh native
-          // session instead of retrying the resume that just failed, while
-          // still adopting this row's identity.
-          existingProviderThread: { ...providerThread, nativeThreadRef: null },
-        });
+        const replacement = yield* loadFromProvider(
+          session.ensureThread({
+            threadId: projection.thread.id,
+            modelSelection: run.modelSelection,
+            runtimePolicy: resolvedRuntimePolicy,
+            providerSessionId,
+            // The native ref is dropped so the adapter binds a fresh native
+            // session instead of retrying the resume that just failed, while
+            // still adopting this row's identity.
+            existingProviderThread: { ...providerThread, nativeThreadRef: null },
+          }),
+        );
+        if (replacement === undefined) return undefined;
         const transferId = yield* idAllocator.allocate.contextTransfer({
           sourceThreadId: projection.thread.id,
           targetThreadId: projection.thread.id,
@@ -747,17 +773,9 @@ export const layer: Layer.Layer<
           ],
         });
         return replacement;
-      }).pipe(Effect.result);
-      if (loadResult._tag === "Failure") {
-        if (input.willRetry === true) return yield* loadResult.failure;
-        yield* settleStartFailure({
-          signal: "provider-thread-load-failure",
-          title: "Provider turn failed to start",
-          error: loadResult.failure,
-        });
-        return;
-      }
-      const loadedProviderThread = loadResult.success;
+      });
+      // The last attempt already failed the run.
+      if (loadedProviderThread === undefined) return;
       if (!(yield* isCurrentAttemptInStatus("starting"))) {
         return;
       }
