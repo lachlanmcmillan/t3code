@@ -1104,9 +1104,9 @@ it.effect("runs a Scratch thread launched at the root in its own folder", () =>
   }),
 );
 
-it.effect("names the worktree itself when the client provides no branch", () =>
+it.effect("names the worktree itself without a namespace when a plain t3 branch exists", () =>
   Effect.gen(function* () {
-    const harness = makeHarness();
+    const harness = makeHarness({ hasCommit: () => Effect.succeed(true) });
     yield* Effect.gen(function* () {
       const launches = yield* ThreadLaunch.ThreadLaunchService;
       const threads = yield* ThreadManagement.ThreadManagementService;
@@ -1121,7 +1121,7 @@ it.effect("names the worktree itself when the client provides no branch", () =>
       yield* waitUntil(() => Effect.sync(() => harness.createWorktree.mock.calls.length === 1));
       assert.match(
         harness.createWorktree.mock.calls[0]?.[0]?.newRefName ?? "",
-        /^t3\/[0-9a-f]{8}$/u,
+        /^worktree-[0-9a-f]{8}$/u,
       );
       yield* waitUntil(() =>
         threads
