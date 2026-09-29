@@ -543,6 +543,7 @@ const make = Effect.gen(function* () {
         if (shouldFetch) yield* setupTracker.stageStatus(threadId, "fetch", "done");
         if (
           branch !== null &&
+          branch.startsWith(`${WORKTREE_BRANCH_PREFIX}/`) &&
           isTemporaryWorktreeBranch(branch) &&
           (yield* git
             .hasCommit({
