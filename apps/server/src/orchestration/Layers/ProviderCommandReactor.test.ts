@@ -2678,12 +2678,20 @@ describe("ProviderCommandReactor", () => {
 
     await harness.runEffect(Deferred.await(statusRefreshed));
     await harness.drain();
+    expect(harness.renameBranch).toHaveBeenCalledWith({
+      cwd: "/tmp/provider-project-worktree",
+      oldBranch: "t3code/1234abcd",
+      newBranch: "feature/gpt-6-luna",
+    });
     expect(harness.generateBranchName.mock.calls[0]?.[0].message).toBe(
       `Add a safer reconnect backoff. ${assistantQuoteText}`,
     );
     expect(harness.generateBranchName.mock.calls[0]?.[0].message).not.toContain("t3-citation://");
     expect(harness.refreshStatus.mock.calls[0]?.[0]).toBe("/tmp/provider-project-worktree");
     const readModel = await harness.readModel();
+    expect(readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"))?.branch).toBe(
+      "feature/gpt-6-luna",
+    );
     expect(
       readModel.threads
         .find((entry) => entry.id === ThreadId.make("thread-1"))
