@@ -2639,7 +2639,7 @@ describe("ProviderCommandReactor", () => {
         type: "thread.meta.update",
         commandId: CommandId.make("cmd-thread-branch"),
         threadId: ThreadId.make("thread-1"),
-        branch: "t3code/1234abcd",
+        branch: "worktree-1234abcd",
         worktreePath: "/tmp/provider-project-worktree",
       }),
     );
@@ -2680,7 +2680,7 @@ describe("ProviderCommandReactor", () => {
     await harness.drain();
     expect(harness.renameBranch).toHaveBeenCalledWith({
       cwd: "/tmp/provider-project-worktree",
-      oldBranch: "t3code/1234abcd",
+      oldBranch: "worktree-1234abcd",
       newBranch: "feature/gpt-6-luna",
     });
     expect(harness.generateBranchName.mock.calls[0]?.[0].message).toBe(
