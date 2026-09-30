@@ -365,6 +365,18 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["output token paragraph buffered wait turn legacy"],
   },
   {
+    id: "expand-thinking",
+    title: "Expand thinking by default",
+    to: "/settings/general",
+    searchTerms: ["reasoning thought trace show expanded collapse"],
+  },
+  {
+    id: "expand-tool-output",
+    title: "Expand tool output by default",
+    to: "/settings/general",
+    searchTerms: ["tool calls command results activity show expanded collapse"],
+  },
+  {
     id: "hide-whitespace-changes",
     title: "Hide whitespace changes",
     to: "/settings/general",

@@ -351,6 +351,8 @@ interface TimelineRowSharedState {
   onWorktreeSetupWorkLocally: (() => void) | null;
   onOpenWorktreeSetupTerminal: ((terminalId: string) => void) | null;
   workGroupViewState: WorkGroupViewState;
+  expandThinkingByDefault: boolean;
+  expandToolOutputByDefault: boolean;
 }
 
 interface TimelineRowActivityState {
@@ -376,6 +378,7 @@ const TimelineRowActivityCtx = createContext<TimelineRowActivityState>(null!);
 interface WorkGroupViewState {
   scrollPositions: Map<string, WorkGroupScrollAnchor>;
   expandedEntries: Set<string>;
+  entryOverrides?: Map<string, boolean>;
 }
 
 const WorkGroupViewCtx = createContext<{
@@ -592,6 +595,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   historyControls,
   loadEarlier = null,
 }: MessagesTimelineProps) {
+  const expandThinkingByDefault = useClientSettings((settings) => settings.expandThinkingByDefault);
+  const expandToolOutputByDefault = useClientSettings((settings) => settings.expandToolOutputByDefault);
   const listIdentityKey = displayThreadKey ?? routeThreadKey;
   const rememberedPosition = useMemo(
     () => readTimelinePosition(listIdentityKey),
@@ -602,6 +607,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   );
   const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(
     () => rememberedPosition?.disclosures?.workGroups ?? new Set(),
+  );
+  const [collapsedWorkGroupIds, setCollapsedWorkGroupIds] = useState<ReadonlySet<string>>(
+    () => rememberedPosition?.disclosures?.collapsedWorkGroups ?? new Set(),
   );
   const [expandedAttemptIds, setExpandedAttemptIds] = useState<ReadonlySet<RunAttemptId>>(
     () => rememberedPosition?.disclosures?.attempts ?? new Set(),
@@ -619,6 +627,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   let paintedExpandedRunIds = expandedRunIds;
   let paintedExpandedWorkGroupIds = expandedWorkGroupIds;
   let paintedExpandedAttemptIds = expandedAttemptIds;
+  let paintedCollapsedWorkGroupIds = collapsedWorkGroupIds;
   if (listIdentityRef.current !== listIdentityKey) {
     listIdentityRef.current = listIdentityKey;
     setPositionedThreadKey(null);
@@ -629,6 +638,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     paintedExpandedAttemptIds = rememberedPosition?.disclosures?.attempts ?? new Set();
     setExpandedRunIds(paintedExpandedRunIds);
     setExpandedWorkGroupIds(paintedExpandedWorkGroupIds);
+    paintedCollapsedWorkGroupIds = rememberedPosition?.disclosures?.collapsedWorkGroups ?? new Set();
+    setCollapsedWorkGroupIds(paintedCollapsedWorkGroupIds);
     setExpandedAttemptIds(paintedExpandedAttemptIds);
   }
   const citationThreadRef = useMemo(() => parseScopedThreadKey(routeThreadKey), [routeThreadKey]);
@@ -725,14 +736,21 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   );
   const onToggleWorkGroup = useCallback(
     (groupId: string, anchorKey: string) => {
-      suspendEndScrollMaintenanceForDisclosure(anchorKey, expandedWorkGroupIds.has(groupId));
+      const row = rowsProjectionRef.current?.projection.rows.find(
+        (entry) => (entry.kind === "work-toggle" || entry.kind === "work-live" || entry.kind === "thinking") && entry.groupId === groupId,
+      );
+      const expanded = row && "expanded" in row ? row.expanded === true : expandedWorkGroupIds.has(groupId);
+      suspendEndScrollMaintenanceForDisclosure(anchorKey, expanded);
       setExpandedWorkGroupIds((existing) => {
         const next = new Set(existing);
-        if (next.has(groupId)) {
-          next.delete(groupId);
-        } else {
-          next.add(groupId);
-        }
+        if (expanded) next.delete(groupId);
+        else next.add(groupId);
+        return next;
+      });
+      setCollapsedWorkGroupIds((existing) => {
+        const next = new Set(existing);
+        if (expanded) next.add(groupId);
+        else next.delete(groupId);
         return next;
       });
     },
@@ -797,7 +815,10 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         runningRunId,
         expandedRunIds,
         expandedAttemptIds,
-        expandedWorkGroupIds,
+        expandedWorkGroupIds: paintedExpandedWorkGroupIds,
+        collapsedWorkGroupIds: paintedCollapsedWorkGroupIds,
+        expandThinkingByDefault,
+        expandToolOutputByDefault,
         isWorking,
         runlessWorkActive,
         activeTurnStartedAt,
@@ -820,7 +841,10 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     runningRunId,
     expandedRunIds,
     expandedAttemptIds,
-    expandedWorkGroupIds,
+    paintedExpandedWorkGroupIds,
+    paintedCollapsedWorkGroupIds,
+    expandThinkingByDefault,
+    expandToolOutputByDefault,
     isWorking,
     runlessWorkActive,
     activeTurnStartedAt,
@@ -1100,6 +1124,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
           disclosures: {
             runs: paintedExpandedRunIds,
             workGroups: paintedExpandedWorkGroupIds,
+            collapsedWorkGroups: paintedCollapsedWorkGroupIds,
             attempts: paintedExpandedAttemptIds,
             workGroupState: workGroupViewState,
           },
@@ -1151,6 +1176,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     citationPositioning,
     paintedExpandedRunIds,
     paintedExpandedWorkGroupIds,
+    paintedCollapsedWorkGroupIds,
     paintedExpandedAttemptIds,
     workGroupViewState,
     rows,
@@ -1240,6 +1266,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocally ?? null,
       onOpenWorktreeSetupTerminal: onOpenWorktreeSetupTerminal ?? null,
       workGroupViewState,
+      expandThinkingByDefault,
+      expandToolOutputByDefault,
     }),
     [
       readyCitationRequest,
@@ -1277,6 +1305,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onWorktreeSetupWorkLocally,
       onOpenWorktreeSetupTerminal,
       workGroupViewState,
+      expandThinkingByDefault,
+      expandToolOutputByDefault,
     ],
   );
   const compactionAwaitingRow =
@@ -5216,9 +5246,12 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       ? notificationChildThreadId(workEntry.projectedItem.item.source)
       : undefined;
   const groupView = use(WorkGroupViewCtx);
-  const [expanded, setExpanded] = useState(
-    () => groupView?.state.expandedEntries.has(workEntry.id) ?? false,
+  const entryState = groupView?.state ?? ctx.workGroupViewState;
+  const [override, setOverride] = useState<boolean | undefined>(
+    () => entryState.entryOverrides?.get(workEntry.id),
   );
+  const expanded = override ?? (entryState.expandedEntries.has(workEntry.id) ||
+    (workEntry.itemType === "reasoning" ? ctx.expandThinkingByDefault : ctx.expandToolOutputByDefault));
   const toggleExpanded = () => {
     const next = !expanded;
     if (groupView) {
@@ -5228,7 +5261,9 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
     } else {
       props.onToggleEntry?.(!next);
     }
-    setExpanded(next);
+    entryState.entryOverrides ??= new Map();
+    entryState.entryOverrides.set(workEntry.id, next);
+    setOverride(next);
   };
   const failureItem = workEntry.projectedItem?.item;
   if (failureItem?.type === "error" && failureItem.status === "failed") {

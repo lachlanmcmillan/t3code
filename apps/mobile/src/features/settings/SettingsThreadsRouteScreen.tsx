@@ -48,6 +48,7 @@ export function SettingsThreadsRouteScreen() {
         >
           <AutoSettleSettingsRows />
           <BetaSettingsSection />
+          <ConversationSettingsSection />
           <LegacySettingsSection />
         </ScrollView>
       </SettingsScreen>
@@ -56,6 +57,29 @@ export function SettingsThreadsRouteScreen() {
 }
 
 const AUTO_SETTLE_DEFAULT_DAYS = DEFAULT_SERVER_SETTINGS.sidebarAutoSettleAfterDays ?? 3;
+
+function ConversationSettingsSection() {
+  const savePreferences = useAtomSet(updateMobilePreferencesAtom);
+  const preferences = useAtomValue(mobilePreferencesAtom);
+  const values = AsyncResult.isSuccess(preferences) ? preferences.value : {};
+
+  return (
+    <SettingsSection title="Conversation">
+      <SettingsSwitchRow
+        icon="brain"
+        label="Expand thinking by default"
+        value={values.expandThinkingByDefault === true}
+        onValueChange={(value) => savePreferences({ expandThinkingByDefault: value })}
+      />
+      <SettingsSwitchRow
+        icon="terminal"
+        label="Expand tool output by default"
+        value={values.expandToolOutputByDefault === true}
+        onValueChange={(value) => savePreferences({ expandToolOutputByDefault: value })}
+      />
+    </SettingsSection>
+  );
+}
 
 /**
  * Mobile edits auto-settle defaults across selected capable targets.

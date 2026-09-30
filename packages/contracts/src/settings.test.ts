@@ -21,6 +21,26 @@ const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
+describe("conversation disclosure settings", () => {
+  it("defaults to collapsed and preserves independent saved preferences", () => {
+    expect(decodeClientSettings({})).toMatchObject({
+      expandThinkingByDefault: false,
+      expandToolOutputByDefault: false,
+    });
+    const settings = decodeClientSettings({
+      expandThinkingByDefault: true,
+      expandToolOutputByDefault: false,
+    });
+    expect(decodeClientSettings(encodeClientSettings(settings))).toMatchObject({
+      expandThinkingByDefault: true,
+      expandToolOutputByDefault: false,
+    });
+    expect(decodeClientSettingsPatch({ expandToolOutputByDefault: true })).toEqual({
+      expandToolOutputByDefault: true,
+    });
+  });
+});
+
 describe("ServerSettings response streaming", () => {
   it("defaults to paragraph buffering", () => {
     expect(decodeServerSettings({}).responseStreamingMode).toBe("paragraph");

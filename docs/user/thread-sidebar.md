@@ -225,6 +225,12 @@ Expand a tool call in the conversation to see its full command and output.
 Summaries shorten shell wrappers and can still describe the latest call after it
 finishes; the call's own result shows its status.
 
+To open thinking traces and tool call commands and output automatically, enable
+**Expand thinking by default** and **Expand tool output by default** in
+**Settings → General** on web and desktop, or **Settings → Thread behavior** on
+mobile. These preferences apply to the current device. You can still collapse
+individual traces and calls.
+
 ## Snooze until later
 
 Choose **Snooze → Custom…** from a thread's menu to pick a date and time in your

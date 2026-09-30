@@ -1226,7 +1226,32 @@ export function deriveThreadFeedPresentation(
   activeWorkStartedAt: string | null = null,
   /** The live work is a provider-native subagent's runless root turn. */
   runlessWorkActive = false,
+  disclosureDefaults: {
+    readonly expandThinkingByDefault?: boolean;
+    readonly expandToolOutputByDefault?: boolean;
+    readonly collapsedWorkGroupIds?: ReadonlySet<string>;
+  } = {},
 ): ThreadFeedEntry[] {
+  const reasoningGroupIds = new Set<string>();
+  if (disclosureDefaults.expandThinkingByDefault) {
+    for (const entry of feed) {
+      if (entry.type !== "activity-group") continue;
+      let anchorId: string | null = null;
+      for (const activity of entry.activities) {
+        const item = activity.projectedItem.item;
+        if (activity.prominent || (item.type === "error" && item.status === "failed") || item.type === "notification") {
+          anchorId = null;
+          continue;
+        }
+        anchorId ??= activity.id;
+        if (activity.workEntry.itemType === "reasoning") reasoningGroupIds.add('work-group:' + anchorId);
+      }
+    }
+  }
+  const workGroupIds = {
+    has: (id: string) => !disclosureDefaults.collapsedWorkGroupIds?.has(id) &&
+      (expandedWorkGroupIds.has(id) || disclosureDefaults.expandToolOutputByDefault === true || reasoningGroupIds.has(id)),
+  };
   const retainedFeed = feed.filter(
     (entry) =>
       entry.type !== "run-fold" && entry.type !== "work-toggle" && entry.type !== "thinking",
@@ -1309,7 +1334,7 @@ export function deriveThreadFeedPresentation(
       appendPresentedFeedEntry(
         result,
         entry,
-        expandedWorkGroupIds,
+        workGroupIds,
         activeRunId,
         isWorking,
         isActiveTailGroup,
@@ -1375,7 +1400,7 @@ function thinkingRow(createdAt: string, runId: RunId | null) {
 function appendPresentedFeedEntry(
   result: ThreadFeedEntry[],
   entry: Exclude<ThreadFeedEntry, { readonly type: "run-fold" | "work-toggle" | "thinking" }>,
-  expandedWorkGroupIds: ReadonlySet<string>,
+  expandedWorkGroupIds: Pick<ReadonlySet<string>, "has">,
   activeRunId: RunId | null,
   isWorking: boolean,
   activeTail: boolean,
@@ -1417,7 +1442,7 @@ function appendPresentedFeedEntry(
 function appendActivityGroupRows(
   result: ThreadFeedEntry[],
   entry: ThreadFeedActivityGroup,
-  expandedWorkGroupIds: ReadonlySet<string>,
+  expandedWorkGroupIds: Pick<ReadonlySet<string>, "has">,
   activeRunId: RunId | null,
   isWorking: boolean,
   activeTail: boolean,
@@ -1481,7 +1506,7 @@ function appendToolGroupRows(
   sourceGroup: Extract<ThreadFeedEntry, { readonly type: "activity-group" }>,
   activities: ReadonlyArray<ThreadFeedActivity>,
   groupId: string,
-  expandedWorkGroupIds: ReadonlySet<string>,
+  expandedWorkGroupIds: Pick<ReadonlySet<string>, "has">,
   activeRunId: RunId | null,
   isWorking: boolean,
   activeTail: boolean,

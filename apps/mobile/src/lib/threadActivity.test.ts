@@ -2573,3 +2573,21 @@ describe("MCP apps", () => {
     expect(feed("running").some((candidate) => candidate.type === "mcp-app")).toBe(false);
   });
 });
+
+it.each(["reasoning", "command_execution"] as const)(
+  "expands mobile %s groups from preferences and respects explicit collapse",
+  (itemType) => {
+    const items: OrchestrationV2TurnItem[] = ["first", "second"].map((id, index) =>
+      itemType === "reasoning"
+        ? { ...base(id, "2026-06-20T00:00:02.000Z", index), type: "reasoning", text: "Full thought", streaming: false }
+        : { ...command(), id: TurnItemId.make(id), ordinal: index },
+    );
+    const feed = buildThreadFeed(items.map((item, index) => projected(item, index)));
+    const collapsed = deriveThreadFeedPresentation(feed, null, new Set()).find((row) => row.type === "work-toggle");
+    expect(collapsed).toMatchObject({ expanded: false });
+    const defaults = itemType === "reasoning" ? { expandThinkingByDefault: true } : { expandToolOutputByDefault: true };
+    const rows = deriveThreadFeedPresentation(feed, null, new Set(), new Set(), null, false, defaults);
+    expect(rows.find((row) => row.type === "work-toggle")).toMatchObject({ expanded: true });
+    expect(deriveThreadFeedPresentation(feed, null, new Set(), new Set(), null, false, { ...defaults, collapsedWorkGroupIds: new Set([collapsed!.groupId]) }).find((row) => row.type === "work-toggle")).toMatchObject({ expanded: false });
+  },
+);

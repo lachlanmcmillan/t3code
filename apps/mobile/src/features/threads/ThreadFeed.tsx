@@ -1,3 +1,6 @@
+import { useAtomValue } from "@effect/atom-react";
+import { AsyncResult } from "effect/reactivity";
+import { mobilePreferencesAtom } from "../../state/preferences";
 import { ThreadContextDivider } from "./thread-context-divider";
 import { ThreadHandoffRow } from "./thread-handoff-row";
 import { SecretRequestCard } from "./SecretRequestCard";
@@ -2241,7 +2244,19 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     expandedWorkRows: {},
     expandedTurnIds: new Set(),
   });
-  const { copiedRowId, expandedWorkGroups, expandedWorkRows, expandedTurnIds } = interactionState;
+  const { copiedRowId, expandedWorkGroups, expandedWorkRows: workRowOverrides, expandedTurnIds } = interactionState;
+  const preferences = useAtomValue(mobilePreferencesAtom);
+  const expandThinkingByDefault = AsyncResult.isSuccess(preferences) && preferences.value.expandThinkingByDefault === true;
+  const expandToolOutputByDefault = AsyncResult.isSuccess(preferences) && preferences.value.expandToolOutputByDefault === true;
+  const expandedWorkRows = useMemo(() => {
+    const rows = { ...workRowOverrides };
+    for (const entry of props.feed) {
+      if (entry.type !== "activity-group") continue;
+      for (const activity of entry.activities) rows[activity.id] ??=
+        activity.workEntry.itemType === "reasoning" ? expandThinkingByDefault : expandToolOutputByDefault;
+    }
+    return rows;
+  }, [workRowOverrides, expandThinkingByDefault, expandToolOutputByDefault, props.feed]);
   const [expandedFile, setExpandedFile] = useState<FilePreviewSource | null>(null);
   const [expandedVideo, setExpandedVideo] = useState<VideoPreviewSource | null>(null);
   const fileShareSourceIdentifier = useId();
@@ -2686,12 +2701,19 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
           ),
           props.activeWorkStartedAt,
           props.runlessWorkActive ?? false,
+          {
+            expandThinkingByDefault,
+            expandToolOutputByDefault,
+            collapsedWorkGroupIds: new Set(Object.entries(expandedWorkGroups).filter(([, expanded]) => !expanded).map(([id]) => id)),
+          },
         ),
         props.feed,
         props.queuedMessages,
       ),
     [
       props.queuedMessages,
+      expandThinkingByDefault,
+      expandToolOutputByDefault,
       expandedTurnIds,
       expandedWorkGroups,
       props.activeWorkStartedAt,
@@ -2862,15 +2884,18 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const onToggleWorkGroup = useCallback(
     (groupId: string, anchorKey?: string) => {
       suspendEndScrollMaintenanceForDisclosure(anchorKey ?? `work-toggle:${groupId}`);
+      const group = presentedFeed.find(
+        (entry): entry is Extract<ThreadFeedEntry, { type: "work-toggle" }> => entry.type === "work-toggle" && entry.groupId === groupId,
+      );
       setInteractionState((current) => ({
         ...current,
         expandedWorkGroups: {
           ...current.expandedWorkGroups,
-          [groupId]: !(current.expandedWorkGroups[groupId] ?? false),
+          [groupId]: !(group?.expanded ?? current.expandedWorkGroups[groupId] ?? false),
         },
       }));
     },
-    [suspendEndScrollMaintenanceForDisclosure],
+    [suspendEndScrollMaintenanceForDisclosure, presentedFeed],
   );
 
   const onToggleWorkRow = useCallback(
@@ -2880,11 +2905,11 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         ...current,
         expandedWorkRows: {
           ...current.expandedWorkRows,
-          [rowId]: !(current.expandedWorkRows[rowId] ?? false),
+          [rowId]: !(expandedWorkRows[rowId] ?? false),
         },
       }));
     },
-    [suspendEndScrollMaintenanceForDisclosure],
+    [suspendEndScrollMaintenanceForDisclosure, expandedWorkRows],
   );
 
   const onToggleTurnFold = useCallback(

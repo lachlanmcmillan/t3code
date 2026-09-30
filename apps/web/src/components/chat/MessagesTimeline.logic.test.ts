@@ -5162,3 +5162,23 @@ describe("live subagents after their parent turn settles", () => {
     expect(rows.map((row) => row.id)).toEqual([`attempt-fold:${attempt.id}`, "child"]);
   });
 });
+
+it.each(["reasoning", "command_execution"] as const)(
+  "expands %s groups from preferences and respects explicit collapse",
+  (itemType) => {
+    const at = "2026-10-01T00:00:00Z";
+    const timelineEntries: TimelineEntry[] = ["first", "second"].map((id) => ({
+      kind: "work",
+      id,
+      createdAt: at,
+      entry: { id, createdAt: at, itemType, label: "Work", detail: "Full detail", tone: itemType === "reasoning" ? "thinking" : "tool", toolLifecycleStatus: "completed" },
+    }));
+    const input = { timelineEntries, isWorking: false, turnDiffSummaries: [], supportsConversationRollback: false };
+    const collapsed = deriveMessagesTimelineRows(input).find((row) => row.kind === "work-toggle");
+    expect(collapsed).toMatchObject({ expanded: false });
+    const defaults = itemType === "reasoning" ? { expandThinkingByDefault: true } : { expandToolOutputByDefault: true };
+    expect(deriveMessagesTimelineRows({ ...input, ...defaults }).find((row) => row.kind === "work-toggle")).toMatchObject({ expanded: true });
+    expect(deriveMessagesTimelineRows({ ...input, ...defaults, collapsedWorkGroupIds: new Set([collapsed!.groupId]) }).find((row) => row.kind === "work-toggle")).toMatchObject({ expanded: false });
+    expect(deriveMessagesTimelineRows({ ...input, expandThinkingByDefault: itemType !== "reasoning" }).find((row) => row.kind === "work-toggle")).toMatchObject({ expanded: false });
+  },
+);
