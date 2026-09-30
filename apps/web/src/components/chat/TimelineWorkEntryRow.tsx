@@ -220,9 +220,16 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       ? notificationChildThreadId(workEntry.projectedItem.item.source)
       : undefined;
   const groupView = use(WorkGroupViewCtx);
-  const [expanded, setExpanded] = useState(
-    () => groupView?.state.expandedEntries.has(workEntry.id) ?? false,
+  const entryState = groupView?.state ?? ctx.workGroupViewState;
+  const [override, setOverride] = useState<boolean | undefined>(() =>
+    entryState.entryOverrides.get(workEntry.id),
   );
+  const expanded =
+    override ??
+    (entryState.expandedEntries.has(workEntry.id) ||
+      (workEntry.itemType === "reasoning"
+        ? ctx.expandThinkingByDefault
+        : ctx.expandToolOutputByDefault));
   const onInitialOutputReady = () => {
     if (groupView) groupView.onContentReady?.(workEntry.id);
     else props.onContentReady?.();
@@ -236,7 +243,8 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
     } else {
       props.onToggleEntry?.(!next);
     }
-    setExpanded(next);
+    entryState.entryOverrides.set(workEntry.id, next);
+    setOverride(next);
   };
   const failureItem = workEntry.projectedItem?.item;
   const pendingApproval =

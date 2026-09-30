@@ -1392,6 +1392,7 @@ interface ThreadFeedPresentationBuild {
   readonly activeWorkStartedAt: string | null;
   readonly runlessWorkActive: boolean;
   readonly display: ThreadFeedDisplay;
+  readonly disclosureDefaults: ThreadFeedDisclosureDefaults;
   readonly rows: ReadonlyArray<ThreadFeedEntry>;
   /** Feed entry `entry` is a user message whose rows start at `rowsLength`. */
   readonly restarts: ReadonlyArray<{ readonly entry: number; readonly rowsLength: number }>;
@@ -1436,6 +1437,7 @@ function presentationRestart(
   activeWorkStartedAt: string | null,
   runlessWorkActive: boolean,
   display: ThreadFeedDisplay,
+  disclosureDefaults: ThreadFeedDisclosureDefaults,
 ): { readonly entry: number; readonly rowsLength: number; readonly index: number } | null {
   if (
     previous === null ||
@@ -1445,7 +1447,8 @@ function presentationRestart(
     previous.display.toolCallVisibility !== display.toolCallVisibility ||
     previous.display.revealedMessageId !== display.revealedMessageId ||
     !setsEqual(previous.expandedRunIds, expandedRunIds) ||
-    !setsEqual(previous.expandedWorkGroupIds, expandedWorkGroupIds)
+    !setsEqual(previous.expandedWorkGroupIds, expandedWorkGroupIds) ||
+    !disclosureDefaultsEqual(previous.disclosureDefaults, disclosureDefaults)
   ) {
     return null;
   }
@@ -1608,7 +1611,41 @@ export function deriveThreadFeedPresentation(
   runlessWorkActive = false,
   cache?: ThreadFeedCache,
   display: ThreadFeedDisplay = DEFAULT_THREAD_FEED_DISPLAY,
+  disclosureDefaults: ThreadFeedDisclosureDefaults = {},
 ): ThreadFeedEntry[] {
+  const runExpanded = (runId: RunId) =>
+    !disclosureDefaults.collapsedRunIds?.has(runId) &&
+    (expandedRunIds.has(runId) ||
+      disclosureDefaults.expandThinkingByDefault === true ||
+      disclosureDefaults.expandToolOutputByDefault === true);
+  const reasoningGroupIds = new Set<string>();
+  if (disclosureDefaults.expandThinkingByDefault) {
+    for (const entry of feed) {
+      if (entry.type !== "activity-group") continue;
+      let anchorId: string | null = null;
+      for (const activity of entry.activities) {
+        const item = activity.projectedItem.item;
+        if (
+          activity.prominent ||
+          (item.type === "error" && item.status === "failed") ||
+          item.type === "notification"
+        ) {
+          anchorId = null;
+          continue;
+        }
+        anchorId ??= activity.id;
+        if (activity.workEntry.itemType === "reasoning")
+          reasoningGroupIds.add("work-group:" + anchorId);
+      }
+    }
+  }
+  const workGroupIds = {
+    has: (id: string) =>
+      !disclosureDefaults.collapsedWorkGroupIds?.has(id) &&
+      (expandedWorkGroupIds.has(id) ||
+        disclosureDefaults.expandToolOutputByDefault === true ||
+        reasoningGroupIds.has(id)),
+  };
   const previous = cache?.presentation ?? null;
   const restart = presentationRestart(
     previous,
@@ -1619,6 +1656,7 @@ export function deriveThreadFeedPresentation(
     activeWorkStartedAt,
     runlessWorkActive,
     display,
+    disclosureDefaults,
   );
   const start = restart?.entry ?? 0;
   const result: ThreadFeedEntry[] =
@@ -1708,7 +1746,7 @@ export function deriveThreadFeedPresentation(
     : deriveThreadFeedRunFolds(sourceFeed, latestRun, isWorking && runlessWorkActive, failedRunIds);
   const collapsedEntryIds = new Set<string>();
   for (const fold of foldsByAnchorId.values()) {
-    if (!expandedRunIds.has(fold.runId)) {
+    if (!runExpanded(fold.runId)) {
       for (const entryId of fold.hiddenEntryIds) collapsedEntryIds.add(entryId);
     }
   }
@@ -1727,7 +1765,7 @@ export function deriveThreadFeedPresentation(
       entry.runId === activeRunId;
     const fold = foldsByAnchorId.get(entry.id);
     if (fold) {
-      const expanded = expandedRunIds.has(fold.runId);
+      const expanded = runExpanded(fold.runId);
       let row = runFoldRowsCache.get(entry);
       if (
         !row ||
@@ -1788,7 +1826,7 @@ export function deriveThreadFeedPresentation(
       appendPresentedFeedEntry(
         result,
         entry,
-        expandedWorkGroupIds,
+        workGroupIds,
         activeRunId,
         isWorking,
         isActiveTailGroup,
@@ -1891,6 +1929,7 @@ export function deriveThreadFeedPresentation(
       activeWorkStartedAt,
       runlessWorkActive,
       display,
+      disclosureDefaults,
       rows: result,
       restarts: cleanRestarts,
       firstEntryByRun,
@@ -1950,7 +1989,7 @@ function appendPresentedFeedEntry(
     ThreadFeedEntry,
     { readonly type: "run-fold" | "work-toggle" | "thinking" | "viewed-images" }
   >,
-  expandedWorkGroupIds: ReadonlySet<string>,
+  expandedWorkGroupIds: Pick<ReadonlySet<string>, "has">,
   activeRunId: RunId | null,
   isWorking: boolean,
   activeTail: boolean,
@@ -1992,7 +2031,7 @@ function appendPresentedFeedEntry(
 function appendActivityGroupRows(
   result: ThreadFeedEntry[],
   entry: ThreadFeedActivityGroup,
-  expandedWorkGroupIds: ReadonlySet<string>,
+  expandedWorkGroupIds: Pick<ReadonlySet<string>, "has">,
   activeRunId: RunId | null,
   isWorking: boolean,
   activeTail: boolean,
@@ -2067,7 +2106,7 @@ function appendToolGroupRows(
   sourceGroup: Extract<ThreadFeedEntry, { readonly type: "activity-group" }>,
   activities: ReadonlyArray<ThreadFeedActivity>,
   groupId: string,
-  expandedWorkGroupIds: ReadonlySet<string>,
+  expandedWorkGroupIds: Pick<ReadonlySet<string>, "has">,
   activeRunId: RunId | null,
   isWorking: boolean,
   activeTail: boolean,
@@ -2245,6 +2284,33 @@ function setsEqual<T>(left: ReadonlySet<T>, right: ReadonlySet<T>): boolean {
   if (left.size !== right.size) return false;
   for (const value of left) if (!right.has(value)) return false;
   return true;
+}
+
+export interface ThreadFeedDisclosureDefaults {
+  readonly expandThinkingByDefault?: boolean;
+  readonly expandToolOutputByDefault?: boolean;
+  readonly collapsedWorkGroupIds?: ReadonlySet<string>;
+  readonly collapsedRunIds?: ReadonlySet<RunId>;
+}
+
+const NO_COLLAPSED_IDS: ReadonlySet<never> = new Set();
+
+function disclosureDefaultsEqual(
+  left: ThreadFeedDisclosureDefaults,
+  right: ThreadFeedDisclosureDefaults,
+): boolean {
+  return (
+    (left.expandThinkingByDefault === true) === (right.expandThinkingByDefault === true) &&
+    (left.expandToolOutputByDefault === true) === (right.expandToolOutputByDefault === true) &&
+    setsEqual<string>(
+      left.collapsedWorkGroupIds ?? NO_COLLAPSED_IDS,
+      right.collapsedWorkGroupIds ?? NO_COLLAPSED_IDS,
+    ) &&
+    setsEqual<RunId>(
+      left.collapsedRunIds ?? NO_COLLAPSED_IDS,
+      right.collapsedRunIds ?? NO_COLLAPSED_IDS,
+    )
+  );
 }
 
 // Summaries are re-derived whenever messages change, including streamed text,

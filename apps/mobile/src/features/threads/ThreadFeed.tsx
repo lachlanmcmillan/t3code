@@ -4,6 +4,9 @@ import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { useWorkspaceSettledContentWidth } from "../layout/workspace-content-width";
 import { ThreadMarkdownVideo, ThreadMediaVisibleContext } from "./ThreadMarkdownVideo";
 import { useMarkdownImageSource } from "../../native/useMarkdownImageSource";
+import { useAtomValue } from "@effect/atom-react";
+import { AsyncResult } from "effect/reactivity";
+import { mobilePreferencesAtom } from "../../state/preferences";
 import {
   enrichedContextLinkCustomization,
   enrichedThreadLinkCustomization,
@@ -2571,6 +2574,11 @@ function useThreadFeedPresentation(
   expandedTurnIds: ReadonlySet<RunId>,
   expandedWorkGroups: Record<string, boolean>,
   revealedMessageId: MessageId | null,
+  disclosureDefaults: {
+    readonly expandThinkingByDefault: boolean;
+    readonly expandToolOutputByDefault: boolean;
+    readonly collapsedTurnIds: ReadonlySet<RunId>;
+  },
 ) {
   const [feedCache] = useState(createThreadFeedCache);
   return appendPendingThreadMessages(
@@ -2587,6 +2595,16 @@ function useThreadFeedPresentation(
       props.runlessWorkActive ?? false,
       feedCache,
       { toolCallVisibility: props.toolCallVisibility ?? "showAll", revealedMessageId },
+      {
+        expandThinkingByDefault: disclosureDefaults.expandThinkingByDefault,
+        expandToolOutputByDefault: disclosureDefaults.expandToolOutputByDefault,
+        collapsedRunIds: disclosureDefaults.collapsedTurnIds,
+        collapsedWorkGroupIds: new Set(
+          Object.entries(expandedWorkGroups)
+            .filter(([, expanded]) => !expanded)
+            .map(([id]) => id),
+        ),
+      },
     ),
     props.feed,
     props.queuedMessages,
@@ -2732,15 +2750,43 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     readonly expandedWorkRows: Record<string, boolean>;
     readonly expandedTurnIds: ReadonlySet<RunId>;
     readonly revealedMessageId: MessageId | null;
+    readonly collapsedTurnIds: ReadonlySet<RunId>;
   }>({
     copiedRowId: null,
     expandedWorkGroups: {},
     expandedWorkRows: {},
     expandedTurnIds: new Set(),
     revealedMessageId: null,
+    collapsedTurnIds: new Set(),
   });
-  const { copiedRowId, expandedWorkGroups, expandedWorkRows, expandedTurnIds, revealedMessageId } =
-    interactionState;
+  const {
+    copiedRowId,
+    expandedWorkGroups,
+    expandedWorkRows: workRowOverrides,
+    expandedTurnIds,
+    collapsedTurnIds,
+    revealedMessageId,
+  } = interactionState;
+  const preferences = useAtomValue(mobilePreferencesAtom);
+  const expandThinkingByDefault =
+    AsyncResult.isSuccess(preferences) && preferences.value.expandThinkingByDefault === true;
+  const expandToolOutputByDefault =
+    AsyncResult.isSuccess(preferences) && preferences.value.expandToolOutputByDefault === true;
+  const expandedWorkRows = useMemo(() => {
+    if (!expandThinkingByDefault && !expandToolOutputByDefault) return workRowOverrides;
+    const rows = { ...workRowOverrides };
+    for (const entry of props.feed) {
+      if (entry.type !== "activity-group") continue;
+      for (const activity of entry.activities) {
+        if (rows[activity.id] !== undefined) continue;
+        rows[activity.id] =
+          activity.workEntry.itemType === "reasoning"
+            ? expandThinkingByDefault
+            : expandToolOutputByDefault;
+      }
+    }
+    return rows;
+  }, [workRowOverrides, expandThinkingByDefault, expandToolOutputByDefault, props.feed]);
   const markdownLinkRequest = useRef<AbortController | null>(null);
   const onInlinePlaybackStart = () => {
     markdownLinkRequest.current?.abort();
@@ -3320,7 +3366,11 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     setInteractionState((current) => ({ ...current, revealedMessageId: jumpToMessageId }));
   }
   const presentedFeed = appendGuestPendingMessages(
-    useThreadFeedPresentation(props, expandedTurnIds, expandedWorkGroups, revealedMessageId),
+    useThreadFeedPresentation(props, expandedTurnIds, expandedWorkGroups, revealedMessageId, {
+      expandThinkingByDefault,
+      expandToolOutputByDefault,
+      collapsedTurnIds,
+    }),
     guestShare,
   );
   const jumpRunId =
@@ -3328,11 +3378,16 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     !presentedFeed.some((entry) => entry.type === "message" && entry.id === jumpToMessageId)
       ? messageFoldRunId(props.feed, jumpToMessageId, presentedFeed)
       : null;
-  if (jumpRunId && !expandedTurnIds.has(jumpRunId)) {
-    setInteractionState((current) => ({
-      ...current,
-      expandedTurnIds: new Set(current.expandedTurnIds).add(jumpRunId),
-    }));
+  if (jumpRunId && (!expandedTurnIds.has(jumpRunId) || collapsedTurnIds.has(jumpRunId))) {
+    setInteractionState((current) => {
+      const collapsed = new Set(current.collapsedTurnIds);
+      collapsed.delete(jumpRunId);
+      return {
+        ...current,
+        expandedTurnIds: new Set(current.expandedTurnIds).add(jumpRunId),
+        collapsedTurnIds: collapsed,
+      };
+    });
   }
   const setupAnchorIndex = presentedFeed.findIndex(
     (entry) => entry.type === "message" && entry.message.role === "user",
@@ -3531,11 +3586,15 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
 
   const onToggleWorkGroup = (groupId: string, anchorKey?: string) => {
     preserveDisclosurePosition(anchorKey ?? `work-toggle:${groupId}`);
+    const group = presentedFeed.find(
+      (entry): entry is Extract<ThreadFeedEntry, { type: "work-toggle" }> =>
+        entry.type === "work-toggle" && entry.groupId === groupId,
+    );
     setInteractionState((current) => ({
       ...current,
       expandedWorkGroups: {
         ...current.expandedWorkGroups,
-        [groupId]: !(current.expandedWorkGroups[groupId] ?? false),
+        [groupId]: !(group?.expanded ?? current.expandedWorkGroups[groupId] ?? false),
       },
     }));
   };
@@ -3544,7 +3603,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const onToggleWorkRow = (rowId: string, anchorKey?: string, groupId?: string) => {
     preserveDisclosurePosition(anchorKey ?? null);
     setInteractionState((current) => {
-      const expanded = !(current.expandedWorkRows[rowId] ?? false);
+      const expanded = !(expandedWorkRows[rowId] ?? false);
       return {
         ...current,
         expandedWorkRows: { ...current.expandedWorkRows, [rowId]: expanded },
@@ -3558,13 +3617,21 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const onToggleTurnFold = (runId: RunId) => {
     preserveDisclosurePosition(`run-fold:${runId}`);
     setInteractionState((current) => {
+      const expanded =
+        !current.collapsedTurnIds.has(runId) &&
+        (current.expandedTurnIds.has(runId) ||
+          expandThinkingByDefault ||
+          expandToolOutputByDefault);
       const next = new Set(current.expandedTurnIds);
-      if (next.has(runId)) {
+      const collapsed = new Set(current.collapsedTurnIds);
+      if (expanded) {
         next.delete(runId);
+        collapsed.add(runId);
       } else {
         next.add(runId);
+        collapsed.delete(runId);
       }
-      return { ...current, expandedTurnIds: next };
+      return { ...current, expandedTurnIds: next, collapsedTurnIds: collapsed };
     });
   };
 

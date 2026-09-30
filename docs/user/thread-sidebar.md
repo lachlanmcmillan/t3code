@@ -282,6 +282,11 @@ Expand a tool call in the conversation to see its full command and output.
 Summaries shorten shell wrappers and can still describe the latest call after it
 finishes; the call's own result shows its status.
 
+To open thinking traces and tool call commands and output automatically, enable
+**Expand thinking by default** and **Expand tool output by default** in
+**Settings → Chat**. These preferences apply to the current device. You can
+still collapse individual traces and calls.
+
 On web and desktop, the thread details card lists the local servers that the
 thread's terminals or its Claude agent started, with their ports. Not every one
 serves a web page. A server the agent started stays listed after the agent's

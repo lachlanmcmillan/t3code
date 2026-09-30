@@ -41,6 +41,26 @@ const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const encodeServerSettingsPatch = Schema.encodeSync(ServerSettingsPatch);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
+describe("conversation disclosure settings", () => {
+  it("defaults to collapsed and preserves independent saved preferences", () => {
+    expect(decodeClientSettings({})).toMatchObject({
+      expandThinkingByDefault: false,
+      expandToolOutputByDefault: false,
+    });
+    const settings = decodeClientSettings({
+      expandThinkingByDefault: true,
+      expandToolOutputByDefault: false,
+    });
+    expect(decodeClientSettings(encodeClientSettings(settings))).toMatchObject({
+      expandThinkingByDefault: true,
+      expandToolOutputByDefault: false,
+    });
+    expect(decodeClientSettingsPatch({ expandToolOutputByDefault: true })).toEqual({
+      expandToolOutputByDefault: true,
+    });
+  });
+});
+
 describe("storage cleanup settings", () => {
   it("keeps cleanup disabled for existing installations", () => {
     expect(decodeServerSettings({}).worktreeCleanup).toBeNull();

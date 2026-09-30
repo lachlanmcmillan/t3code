@@ -104,6 +104,8 @@ export interface TimelineRowSharedState {
   onWorktreeSetupWorkLocally: (() => void) | null;
   onOpenWorktreeSetupTerminal: ((terminalId: string) => void) | null;
   workGroupViewState: WorkGroupViewState;
+  expandThinkingByDefault: boolean;
+  expandToolOutputByDefault: boolean;
 }
 
 export interface TimelineRowActivityState {
@@ -125,6 +127,7 @@ export const TimelineRowActivityCtx = createContext<TimelineRowActivityState>(nu
 export interface WorkGroupViewState {
   scrollPositions: Map<string, WorkGroupScrollAnchor>;
   expandedEntries: Set<string>;
+  entryOverrides: Map<string, boolean>;
 }
 
 export const WorkGroupViewCtx = createContext<{

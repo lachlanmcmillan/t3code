@@ -518,6 +518,12 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.diffFilesCollapsed !== DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed
       ? ["Default diff file state"]
       : []),
+    ...(settings.expandThinkingByDefault !== DEFAULT_UNIFIED_SETTINGS.expandThinkingByDefault
+      ? ["Expand thinking by default"]
+      : []),
+    ...(settings.expandToolOutputByDefault !== DEFAULT_UNIFIED_SETTINGS.expandToolOutputByDefault
+      ? ["Expand tool output by default"]
+      : []),
     ...(settings.diffIgnoreWhitespace !== DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace
       ? ["Diff whitespace changes"]
       : []),
@@ -656,6 +662,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       diffLayout: DEFAULT_UNIFIED_SETTINGS.diffLayout,
       proactivePanelsEnabled: DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled,
       showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
+      expandThinkingByDefault: DEFAULT_UNIFIED_SETTINGS.expandThinkingByDefault,
+      expandToolOutputByDefault: DEFAULT_UNIFIED_SETTINGS.expandToolOutputByDefault,
       composerRichTextEnabled: DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled,
       sendShortcut: DEFAULT_UNIFIED_SETTINGS.sendShortcut,
       followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
@@ -1293,6 +1301,58 @@ export function ChatSettingsPanel() {
 
       <SettingsSection id="activity" title="Activity">
         <ToolCallVisibilityRow />
+        <SettingsRow
+          {...searchableSetting("expand-thinking")}
+          description="Show thinking traces expanded in the conversation. Individual traces can still be collapsed."
+          resetAction={
+            settings.expandThinkingByDefault !==
+            DEFAULT_UNIFIED_SETTINGS.expandThinkingByDefault ? (
+              <SettingResetButton
+                label="expand thinking by default"
+                onClick={() =>
+                  updateSettings({
+                    expandThinkingByDefault: DEFAULT_UNIFIED_SETTINGS.expandThinkingByDefault,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.expandThinkingByDefault}
+              onCheckedChange={(checked) =>
+                updateSettings({ expandThinkingByDefault: Boolean(checked) })
+              }
+              aria-label="Expand thinking by default"
+            />
+          }
+        />
+        <SettingsRow
+          {...searchableSetting("expand-tool-output")}
+          description="Show tool call commands and output expanded in the conversation. Individual calls can still be collapsed."
+          resetAction={
+            settings.expandToolOutputByDefault !==
+            DEFAULT_UNIFIED_SETTINGS.expandToolOutputByDefault ? (
+              <SettingResetButton
+                label="expand tool output by default"
+                onClick={() =>
+                  updateSettings({
+                    expandToolOutputByDefault: DEFAULT_UNIFIED_SETTINGS.expandToolOutputByDefault,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.expandToolOutputByDefault}
+              onCheckedChange={(checked) =>
+                updateSettings({ expandToolOutputByDefault: Boolean(checked) })
+              }
+              aria-label="Expand tool output by default"
+            />
+          }
+        />
       </SettingsSection>
 
       <SettingsSection id="screen-reader" title="Screen reader">

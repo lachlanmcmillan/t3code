@@ -10,6 +10,7 @@ import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/
 import { ListChoiceRow as SettingsChoiceRow } from "../../components/ui/ListChoiceRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsScreen } from "./components/SettingsScreen";
+import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 
 const FOLLOW_UP_OPTIONS: ReadonlyArray<{
   readonly behavior: FollowUpBehavior;
@@ -62,6 +63,28 @@ export function SettingsFollowUpRouteScreen() {
         Long-press the send button to use the other option for a single message. With a hardware
         keyboard, hold {Platform.OS === "android" ? "Ctrl" : "Command"} while sending.
       </Text>
+      <SettingsSection title="Conversation">
+        <SettingsSwitchRow
+          icon="brain"
+          label="Expand thinking by default"
+          value={
+            AsyncResult.isSuccess(preferencesResult) &&
+            preferencesResult.value.expandThinkingByDefault === true
+          }
+          disabled={!preferencesReady}
+          onValueChange={(value) => savePreferences({ expandThinkingByDefault: value })}
+        />
+        <SettingsSwitchRow
+          icon="terminal"
+          label="Expand tool output by default"
+          value={
+            AsyncResult.isSuccess(preferencesResult) &&
+            preferencesResult.value.expandToolOutputByDefault === true
+          }
+          disabled={!preferencesReady}
+          onValueChange={(value) => savePreferences({ expandToolOutputByDefault: value })}
+        />
+      </SettingsSection>
     </ScrollView>
   );
 

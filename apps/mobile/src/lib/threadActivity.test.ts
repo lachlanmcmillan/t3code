@@ -951,6 +951,40 @@ describe("buildThreadFeed", () => {
       label: "Worked for 2s",
     });
 
+    for (const defaults of [
+      { expandThinkingByDefault: true },
+      { expandToolOutputByDefault: true },
+    ]) {
+      const rows = deriveThreadFeedPresentation(
+        feed,
+        latestRun,
+        new Set(),
+        new Set(),
+        null,
+        false,
+        undefined,
+        undefined,
+        defaults,
+      );
+      expect(rows.find((row) => row.type === "run-fold")).toMatchObject({ expanded: true });
+      expect(
+        deriveThreadFeedPresentation(
+          feed,
+          latestRun,
+          new Set(),
+          new Set(),
+          null,
+          false,
+          undefined,
+          undefined,
+          {
+            ...defaults,
+            collapsedRunIds: new Set([runId]),
+          },
+        ).map((row) => row.id),
+      ).toEqual(collapsed.map((row) => row.id));
+    }
+
     const expanded = deriveThreadFeedPresentation(feed, latestRun, new Set([runId]));
     expect(expanded.map((entry) => entry.type)).toEqual([
       "message",
@@ -2182,3 +2216,77 @@ it("caps live thought previews while preserving reasoning detail", () => {
   expect(JSON.parse(activity.getFullDetail()!).item).toMatchObject({ text });
   expect(activity.getCopyText()).toContain(text);
 });
+
+it.each(["reasoning", "command_execution"] as const)(
+  "expands mobile %s groups from preferences and respects explicit collapse",
+  (itemType) => {
+    const items: OrchestrationV2TurnItem[] = ["first", "second"].map((id, index) =>
+      itemType === "reasoning"
+        ? {
+            ...base(id, "2026-06-20T00:00:02.000Z", index),
+            type: "reasoning",
+            text: "Full thought",
+            streaming: false,
+          }
+        : { ...command(), id: TurnItemId.make(id), ordinal: index },
+    );
+    const feed = buildThreadFeed(items.map((item, index) => projected(item, index)));
+    const collapsed = deriveThreadFeedPresentation(feed, null, new Set([runId])).find(
+      (row) => row.type === "work-toggle",
+    );
+    expect(collapsed).toMatchObject({ expanded: false });
+    const defaults =
+      itemType === "reasoning"
+        ? { expandThinkingByDefault: true }
+        : { expandToolOutputByDefault: true };
+    const rows = deriveThreadFeedPresentation(
+      feed,
+      null,
+      new Set([runId]),
+      new Set(),
+      null,
+      false,
+      undefined,
+      undefined,
+      defaults,
+    );
+    expect(rows.find((row) => row.type === "work-toggle")).toMatchObject({ expanded: true });
+    expect(
+      deriveThreadFeedPresentation(
+        feed,
+        null,
+        new Set([runId]),
+        new Set(),
+        null,
+        false,
+        undefined,
+        undefined,
+        {
+          ...defaults,
+          collapsedWorkGroupIds: new Set([collapsed!.groupId]),
+        },
+      ).find((row) => row.type === "work-toggle"),
+    ).toMatchObject({ expanded: false });
+    // Rows before the latest user message are reused from the cache, so a
+    // changed default has to invalidate them too.
+    const nextTurn = buildThreadFeed([
+      ...items.map((item, index) => projected(item, index)),
+      projected({ ...userMessage("2026-06-20T00:00:05.000Z"), runId: RunId.make("run-2") }, 2),
+    ]);
+    const cache = createThreadFeedCache();
+    const present = (disclosure: typeof defaults | undefined) =>
+      deriveThreadFeedPresentation(
+        nextTurn,
+        null,
+        new Set([runId]),
+        new Set(),
+        null,
+        false,
+        cache,
+        undefined,
+        disclosure,
+      ).find((row) => row.type === "work-toggle");
+    expect(present(undefined)).toMatchObject({ expanded: false });
+    expect(present(defaults)).toMatchObject({ expanded: true });
+  },
+);
