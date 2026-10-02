@@ -1299,6 +1299,7 @@ export function deriveMessagesTimelineRows(input: {
   latestRun?: TimelineLatestRun | null;
   runningRunId?: RunId | null;
   expandedRunIds?: ReadonlySet<RunId>;
+  collapsedRunIds?: ReadonlySet<RunId>;
   expandedAttemptIds?: ReadonlySet<RunAttemptId>;
   expandedWorkGroupIds?: ReadonlySet<string>;
   collapsedWorkGroupIds?: ReadonlySet<string>;
@@ -1318,11 +1319,17 @@ export function deriveMessagesTimelineRows(input: {
   /** Live bootstrap progress. Renders a stage card under the first user message. */
   worktreeSetup?: WorktreeSetupSnapshot | null;
 }): MessagesTimelineRow[] {
+  const runExpanded = (runId: RunId) =>
+    !input.collapsedRunIds?.has(runId) &&
+    (input.expandedRunIds?.has(runId) === true ||
+      input.expandThinkingByDefault === true ||
+      input.expandToolOutputByDefault === true);
   const groupExpanded = (groupId: string, entries: ReadonlyArray<WorkLogEntry>) =>
     !input.collapsedWorkGroupIds?.has(groupId) &&
     (input.expandedWorkGroupIds?.has(groupId) === true ||
       input.expandToolOutputByDefault === true ||
-      (input.expandThinkingByDefault === true && entries.some((entry) => entry.itemType === "reasoning")));
+      (input.expandThinkingByDefault === true &&
+        entries.some((entry) => entry.itemType === "reasoning")));
   const timelineEntries = withoutSubagentDelegationRows(
     settleSupersededReasoning(input.timelineEntries),
   );
@@ -1367,7 +1374,7 @@ export function deriveMessagesTimelineRows(input: {
   });
   const collapsedEntryIds = new Set<string>();
   for (const fold of foldsByAnchorEntryId.values()) {
-    if (!input.expandedRunIds?.has(fold.runId)) {
+    if (!runExpanded(fold.runId)) {
       for (const entryId of fold.hiddenEntryIds) {
         collapsedEntryIds.add(entryId);
       }
@@ -1461,7 +1468,10 @@ export function deriveMessagesTimelineRows(input: {
             entry: (latestRunningToolEntry ?? latestVisibleToolEntry).entry,
             groupedEntries: visibleActiveToolEntries.map((entry) => entry.entry),
             groupId,
-            expanded: groupExpanded(groupId, visibleActiveToolEntries.map((entry) => entry.entry)),
+            expanded: groupExpanded(
+              groupId,
+              visibleActiveToolEntries.map((entry) => entry.entry),
+            ),
             active: latestToolKeepsActivityLive,
             ...(latestThoughtEntry ? { thought: latestThoughtEntry.entry } : {}),
           };
@@ -1524,7 +1534,7 @@ export function deriveMessagesTimelineRows(input: {
         createdAt: turnFold.createdAt,
         runId: turnFold.runId,
         label: turnFold.label,
-        expanded: input.expandedRunIds?.has(turnFold.runId) ?? false,
+        expanded: runExpanded(turnFold.runId),
       });
     }
 
@@ -1888,7 +1898,10 @@ export function deriveMessagesTimelineRows(input: {
     const failedGroupAnchor = latestToolFailed ? activeWorkAnchor : undefined;
     if (failedGroupAnchor) {
       const groupId = workGroupId(failedGroupAnchor.id);
-      const expanded = groupExpanded(groupId, visibleActiveToolEntries.map((entry) => entry.entry));
+      const expanded = groupExpanded(
+        groupId,
+        visibleActiveToolEntries.map((entry) => entry.entry),
+      );
       nextRows.push({
         kind: "thinking",
         id: LIVE_ACTIVITY_ROW_ID,

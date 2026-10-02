@@ -2238,22 +2238,36 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     readonly expandedWorkGroups: Record<string, boolean>;
     readonly expandedWorkRows: Record<string, boolean>;
     readonly expandedTurnIds: ReadonlySet<RunId>;
+    readonly collapsedTurnIds: ReadonlySet<RunId>;
   }>({
     copiedRowId: null,
     expandedWorkGroups: {},
     expandedWorkRows: {},
     expandedTurnIds: new Set(),
+    collapsedTurnIds: new Set(),
   });
-  const { copiedRowId, expandedWorkGroups, expandedWorkRows: workRowOverrides, expandedTurnIds } = interactionState;
+  const {
+    copiedRowId,
+    expandedWorkGroups,
+    expandedWorkRows: workRowOverrides,
+    expandedTurnIds,
+    collapsedTurnIds,
+  } = interactionState;
   const preferences = useAtomValue(mobilePreferencesAtom);
-  const expandThinkingByDefault = AsyncResult.isSuccess(preferences) && preferences.value.expandThinkingByDefault === true;
-  const expandToolOutputByDefault = AsyncResult.isSuccess(preferences) && preferences.value.expandToolOutputByDefault === true;
+  const expandThinkingByDefault =
+    AsyncResult.isSuccess(preferences) && preferences.value.expandThinkingByDefault === true;
+  const expandToolOutputByDefault =
+    AsyncResult.isSuccess(preferences) && preferences.value.expandToolOutputByDefault === true;
   const expandedWorkRows = useMemo(() => {
+    if (!expandThinkingByDefault && !expandToolOutputByDefault) return workRowOverrides;
     const rows = { ...workRowOverrides };
     for (const entry of props.feed) {
       if (entry.type !== "activity-group") continue;
-      for (const activity of entry.activities) rows[activity.id] ??=
-        activity.workEntry.itemType === "reasoning" ? expandThinkingByDefault : expandToolOutputByDefault;
+      for (const activity of entry.activities)
+        rows[activity.id] ??=
+          activity.workEntry.itemType === "reasoning"
+            ? expandThinkingByDefault
+            : expandToolOutputByDefault;
     }
     return rows;
   }, [workRowOverrides, expandThinkingByDefault, expandToolOutputByDefault, props.feed]);
@@ -2704,7 +2718,12 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
           {
             expandThinkingByDefault,
             expandToolOutputByDefault,
-            collapsedWorkGroupIds: new Set(Object.entries(expandedWorkGroups).filter(([, expanded]) => !expanded).map(([id]) => id)),
+            collapsedRunIds: collapsedTurnIds,
+            collapsedWorkGroupIds: new Set(
+              Object.entries(expandedWorkGroups)
+                .filter(([, expanded]) => !expanded)
+                .map(([id]) => id),
+            ),
           },
         ),
         props.feed,
@@ -2715,6 +2734,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       expandThinkingByDefault,
       expandToolOutputByDefault,
       expandedTurnIds,
+      collapsedTurnIds,
       expandedWorkGroups,
       props.activeWorkStartedAt,
       props.runlessWorkActive,
@@ -2885,7 +2905,8 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     (groupId: string, anchorKey?: string) => {
       suspendEndScrollMaintenanceForDisclosure(anchorKey ?? `work-toggle:${groupId}`);
       const group = presentedFeed.find(
-        (entry): entry is Extract<ThreadFeedEntry, { type: "work-toggle" }> => entry.type === "work-toggle" && entry.groupId === groupId,
+        (entry): entry is Extract<ThreadFeedEntry, { type: "work-toggle" }> =>
+          entry.type === "work-toggle" && entry.groupId === groupId,
       );
       setInteractionState((current) => ({
         ...current,
@@ -2916,16 +2937,24 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     (runId: RunId) => {
       suspendEndScrollMaintenanceForDisclosure(`run-fold:${runId}`);
       setInteractionState((current) => {
+        const expanded =
+          !current.collapsedTurnIds.has(runId) &&
+          (current.expandedTurnIds.has(runId) ||
+            expandThinkingByDefault ||
+            expandToolOutputByDefault);
         const next = new Set(current.expandedTurnIds);
-        if (next.has(runId)) {
+        const collapsed = new Set(current.collapsedTurnIds);
+        if (expanded) {
           next.delete(runId);
+          collapsed.add(runId);
         } else {
           next.add(runId);
+          collapsed.delete(runId);
         }
-        return { ...current, expandedTurnIds: next };
+        return { ...current, expandedTurnIds: next, collapsedTurnIds: collapsed };
       });
     },
-    [suspendEndScrollMaintenanceForDisclosure],
+    [suspendEndScrollMaintenanceForDisclosure, expandThinkingByDefault, expandToolOutputByDefault],
   );
 
   const onPressPreview = useCallback((source: FilePreviewSource) => {

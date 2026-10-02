@@ -3,6 +3,7 @@
 import {
   ApprovalRequestId,
   CheckpointRef,
+  DEFAULT_CLIENT_SETTINGS,
   EnvironmentId,
   MessageId,
   ProjectId,
@@ -2672,49 +2673,63 @@ describe("MessagesTimeline", () => {
     },
   );
 
-  it("expands and collapses a tool call through its header", async () => {
-    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    vi.stubGlobal("requestAnimationFrame", () => 0);
-    vi.stubGlobal("cancelAnimationFrame", () => {});
-    let renderer: ReactTestRenderer | undefined;
-    try {
-      await act(() => {
-        renderer = create(
-          <MessagesTimeline
-            {...buildProps()}
-            timelineEntries={[
-              {
-                id: "entry-standalone",
-                kind: "work",
-                createdAt: MESSAGE_CREATED_AT,
-                entry: {
-                  id: "work-standalone",
+  it.each([false, true])(
+    "expands and collapses a tool call with default expansion %s",
+    async (expandToolOutputByDefault) => {
+      const { __setClientSettingsForTests } = await import("~/hooks/useSettings");
+      __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, expandToolOutputByDefault });
+      vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+      vi.stubGlobal("requestAnimationFrame", () => 0);
+      vi.stubGlobal("cancelAnimationFrame", () => {});
+      let renderer: ReactTestRenderer | undefined;
+      try {
+        await act(() => {
+          renderer = create(
+            <MessagesTimeline
+              {...buildProps()}
+              routeThreadKey={`tool-expansion-${expandToolOutputByDefault}`}
+              timelineEntries={[
+                {
+                  id: "entry-standalone",
+                  kind: "work",
                   createdAt: MESSAGE_CREATED_AT,
-                  toolCallId: "call-standalone",
-                  label: "Run lint",
-                  tone: "tool",
-                  itemType: "command_execution",
-                  command: "pnpm lint",
-                  toolLifecycleStatus: "completed",
+                  entry: {
+                    id: "work-standalone",
+                    createdAt: MESSAGE_CREATED_AT,
+                    toolCallId: "call-standalone",
+                    label: "Run lint",
+                    tone: "tool",
+                    itemType: "command_execution",
+                    command: "pnpm lint",
+                    toolLifecycleStatus: "completed",
+                  },
                 },
-              },
-            ]}
-          />,
-        );
-      });
-      await act(() => renderer!.root.findByProps({ "aria-expanded": false }).props.onClick());
-      const expanded = renderer!.root.findAll(
-        (node) => node.type === "div" && node.props["aria-expanded"] === true,
-      )[0]!;
-      expect(expanded).toBeDefined();
-      await act(() => expanded.props.onClick());
-      expect(
-        renderer!.root.findAll(
+              ]}
+            />,
+          );
+        });
+        if (expandToolOutputByDefault) {
+          const row = renderer!.root.findAll(
+            (node) => node.type === "div" && node.props["aria-expanded"] === true,
+          )[0]!;
+          expect(row).toBeDefined();
+          await act(() => row.props.onClick());
+        }
+        await act(() => renderer!.root.findByProps({ "aria-expanded": false }).props.onClick());
+        const expanded = renderer!.root.findAll(
           (node) => node.type === "div" && node.props["aria-expanded"] === true,
-        ),
-      ).toHaveLength(0);
-    } finally {
-      await act(() => renderer?.unmount());
-    }
-  });
+        )[0]!;
+        expect(expanded).toBeDefined();
+        await act(() => expanded.props.onClick());
+        expect(
+          renderer!.root.findAll(
+            (node) => node.type === "div" && node.props["aria-expanded"] === true,
+          ),
+        ).toHaveLength(0);
+      } finally {
+        await act(() => renderer?.unmount());
+        __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+      }
+    },
+  );
 });

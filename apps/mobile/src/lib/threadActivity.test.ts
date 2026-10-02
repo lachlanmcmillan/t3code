@@ -864,6 +864,28 @@ describe("buildThreadFeed", () => {
       label: "Worked for 2.0s",
     });
 
+    for (const defaults of [
+      { expandThinkingByDefault: true },
+      { expandToolOutputByDefault: true },
+    ]) {
+      const rows = deriveThreadFeedPresentation(
+        feed,
+        latestRun,
+        new Set(),
+        new Set(),
+        null,
+        false,
+        defaults,
+      );
+      expect(rows.find((row) => row.type === "run-fold")).toMatchObject({ expanded: true });
+      expect(
+        deriveThreadFeedPresentation(feed, latestRun, new Set(), new Set(), null, false, {
+          ...defaults,
+          collapsedRunIds: new Set([runId]),
+        }).map((row) => row.id),
+      ).toEqual(collapsed.map((row) => row.id));
+    }
+
     const expanded = deriveThreadFeedPresentation(feed, latestRun, new Set([runId]));
     expect(expanded.map((entry) => entry.type)).toEqual([
       "message",
@@ -2579,15 +2601,38 @@ it.each(["reasoning", "command_execution"] as const)(
   (itemType) => {
     const items: OrchestrationV2TurnItem[] = ["first", "second"].map((id, index) =>
       itemType === "reasoning"
-        ? { ...base(id, "2026-06-20T00:00:02.000Z", index), type: "reasoning", text: "Full thought", streaming: false }
+        ? {
+            ...base(id, "2026-06-20T00:00:02.000Z", index),
+            type: "reasoning",
+            text: "Full thought",
+            streaming: false,
+          }
         : { ...command(), id: TurnItemId.make(id), ordinal: index },
     );
     const feed = buildThreadFeed(items.map((item, index) => projected(item, index)));
-    const collapsed = deriveThreadFeedPresentation(feed, null, new Set()).find((row) => row.type === "work-toggle");
+    const collapsed = deriveThreadFeedPresentation(feed, null, new Set([runId])).find(
+      (row) => row.type === "work-toggle",
+    );
     expect(collapsed).toMatchObject({ expanded: false });
-    const defaults = itemType === "reasoning" ? { expandThinkingByDefault: true } : { expandToolOutputByDefault: true };
-    const rows = deriveThreadFeedPresentation(feed, null, new Set(), new Set(), null, false, defaults);
+    const defaults =
+      itemType === "reasoning"
+        ? { expandThinkingByDefault: true }
+        : { expandToolOutputByDefault: true };
+    const rows = deriveThreadFeedPresentation(
+      feed,
+      null,
+      new Set([runId]),
+      new Set(),
+      null,
+      false,
+      defaults,
+    );
     expect(rows.find((row) => row.type === "work-toggle")).toMatchObject({ expanded: true });
-    expect(deriveThreadFeedPresentation(feed, null, new Set(), new Set(), null, false, { ...defaults, collapsedWorkGroupIds: new Set([collapsed!.groupId]) }).find((row) => row.type === "work-toggle")).toMatchObject({ expanded: false });
+    expect(
+      deriveThreadFeedPresentation(feed, null, new Set([runId]), new Set(), null, false, {
+        ...defaults,
+        collapsedWorkGroupIds: new Set([collapsed!.groupId]),
+      }).find((row) => row.type === "work-toggle"),
+    ).toMatchObject({ expanded: false });
   },
 );

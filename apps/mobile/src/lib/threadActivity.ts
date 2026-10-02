@@ -1230,8 +1230,14 @@ export function deriveThreadFeedPresentation(
     readonly expandThinkingByDefault?: boolean;
     readonly expandToolOutputByDefault?: boolean;
     readonly collapsedWorkGroupIds?: ReadonlySet<string>;
+    readonly collapsedRunIds?: ReadonlySet<RunId>;
   } = {},
 ): ThreadFeedEntry[] {
+  const runExpanded = (runId: RunId) =>
+    !disclosureDefaults.collapsedRunIds?.has(runId) &&
+    (expandedRunIds.has(runId) ||
+      disclosureDefaults.expandThinkingByDefault === true ||
+      disclosureDefaults.expandToolOutputByDefault === true);
   const reasoningGroupIds = new Set<string>();
   if (disclosureDefaults.expandThinkingByDefault) {
     for (const entry of feed) {
@@ -1239,18 +1245,26 @@ export function deriveThreadFeedPresentation(
       let anchorId: string | null = null;
       for (const activity of entry.activities) {
         const item = activity.projectedItem.item;
-        if (activity.prominent || (item.type === "error" && item.status === "failed") || item.type === "notification") {
+        if (
+          activity.prominent ||
+          (item.type === "error" && item.status === "failed") ||
+          item.type === "notification"
+        ) {
           anchorId = null;
           continue;
         }
         anchorId ??= activity.id;
-        if (activity.workEntry.itemType === "reasoning") reasoningGroupIds.add('work-group:' + anchorId);
+        if (activity.workEntry.itemType === "reasoning")
+          reasoningGroupIds.add("work-group:" + anchorId);
       }
     }
   }
   const workGroupIds = {
-    has: (id: string) => !disclosureDefaults.collapsedWorkGroupIds?.has(id) &&
-      (expandedWorkGroupIds.has(id) || disclosureDefaults.expandToolOutputByDefault === true || reasoningGroupIds.has(id)),
+    has: (id: string) =>
+      !disclosureDefaults.collapsedWorkGroupIds?.has(id) &&
+      (expandedWorkGroupIds.has(id) ||
+        disclosureDefaults.expandToolOutputByDefault === true ||
+        reasoningGroupIds.has(id)),
   };
   const retainedFeed = feed.filter(
     (entry) =>
@@ -1270,7 +1284,7 @@ export function deriveThreadFeedPresentation(
   );
   const collapsedEntryIds = new Set<string>();
   for (const fold of foldsByAnchorId.values()) {
-    if (!expandedRunIds.has(fold.runId)) {
+    if (!runExpanded(fold.runId)) {
       for (const entryId of fold.hiddenEntryIds) collapsedEntryIds.add(entryId);
     }
   }
@@ -1287,7 +1301,7 @@ export function deriveThreadFeedPresentation(
       entry.runId === activeRunId;
     const fold = foldsByAnchorId.get(entry.id);
     if (fold) {
-      const expanded = expandedRunIds.has(fold.runId);
+      const expanded = runExpanded(fold.runId);
       let row = runFoldRowsCache.get(entry);
       if (
         !row ||
