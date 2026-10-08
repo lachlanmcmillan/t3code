@@ -18,7 +18,7 @@ import type {
   StorageCleanupReportEntry,
   ThreadId,
 } from "@t3tools/contracts";
-import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
+import { resolveProjectSettings, resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
 import { resolveWorktreeT3Home } from "@t3tools/shared/devHome";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Context from "effect/Context";
@@ -40,6 +40,7 @@ import { parse as parseYaml } from "yaml";
 
 import * as ServerConfig from "./config.ts";
 import * as GitManager from "./git/GitManager.ts";
+import { configuredWorktreePath } from "./git/worktreePath.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
@@ -1011,15 +1012,24 @@ const make = Effect.gen(function* () {
       );
       if (root !== null && !isFilesystemRoot(root, path)) roots.push(root);
     }
+    // A project's own worktree location counts as managed for that project's worktrees.
     const worktreePathReason = Effect.fn("StorageCleanup.worktreePathReason")(function* (
       worktreePath: string,
+      projectRoot: string | null,
     ) {
       // Allow symlinked parents, never a symlinked worktree directory.
       const realPath = yield* fs.realPath(worktreePath);
       const realParent = yield* fs.realPath(path.dirname(worktreePath));
       if (realPath !== path.join(realParent, path.basename(worktreePath)))
         return "worktree is a symbolic link";
-      if (!roots.some((root) => inside(root, realPath)))
+      if (
+        !roots.some((root) => inside(root, realPath)) &&
+        !(
+          projectRoot !== null &&
+          !isFilesystemRoot(projectRoot, path) &&
+          inside(projectRoot, realPath)
+        )
+      )
         return "outside the managed worktree folder";
       if ((yield* fs.stat(path.join(worktreePath, ".git"))).type !== "File")
         return "not a linked worktree";
@@ -1166,7 +1176,19 @@ const make = Effect.gen(function* () {
         // Only Git-based rules can make a not-yet-due worktree eligible, so skip Git otherwise.
         if (!eligible && !settings.worktreeUnchanged && !settings.worktreeOnMerge)
           return keep(notDueReason);
-        const pathReason = yield* worktreePathReason(worktreePath);
+        const configuredPath = configuredWorktreePath(
+          project.workspaceRoot,
+          thread.branch,
+          resolveProjectSettings(serverSettings, thread.projectId).settings.worktreeBaseDirectory,
+          path,
+        );
+        const projectRoot =
+          configuredPath === null
+            ? null
+            : yield* fs
+                .realPath(path.dirname(configuredPath))
+                .pipe(Effect.orElseSucceed(() => null));
+        const pathReason = yield* worktreePathReason(worktreePath, projectRoot);
         if (pathReason !== null) return keep(pathReason);
         if (yield* containsProjectRoot(worktreePath, [project, ...snapshot.projects]))
           return keep("contains a project checkout");
@@ -1368,7 +1390,7 @@ const make = Effect.gen(function* () {
         yield* withWorkspaceLease(
           worktreePath,
           Effect.gen(function* () {
-            const pathReason = yield* worktreePathReason(worktreePath);
+            const pathReason = yield* worktreePathReason(worktreePath, projectRoot);
             if (pathReason !== null) return keep(pathReason);
             const blockedWhileMeasuring = yield* blockedSinceCheck();
             if (blockedWhileMeasuring !== null) return keep(blockedWhileMeasuring);

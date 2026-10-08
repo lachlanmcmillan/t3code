@@ -202,6 +202,13 @@ such as another drive, set **Settings → Worktrees → Worktree location** to a
 `D:\worktrees` or `~/worktrees`. The setting is per machine. Existing worktrees stay where they
 are, and cleanup covers both the default folder and the custom one.
 
+To use a separate folder for one project, select the project in Settings and open **Worktrees →
+Project worktree location**. Each new worktree gets a branch-named folder there. Relative paths
+such as `.worktrees` start at the project's checkout; `~/` starts at the server's home directory.
+Leave the field empty or reset the override to use the server-wide location. Existing worktrees
+stay where they are. On mobile, select the project in the Settings filter, then open
+**Worktrees → Project worktree location**.
+
 ## Fast worktree checkout on macOS
 
 Fast worktree checkout is a beta. Turn it on for each Mac in **Settings → Labs → Fast worktree

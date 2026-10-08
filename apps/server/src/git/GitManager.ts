@@ -79,6 +79,7 @@ import {
 } from "../textGeneration/TextGenerationPresets.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import { configuredWorktreePath } from "./worktreePath.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import { extractBranchNameFromRemoteRef } from "./remoteRefs.ts";
@@ -785,18 +786,28 @@ export const make = Effect.gen(function* () {
   const createWorktree: GitManager["Service"]["createWorktree"] = Effect.fn(
     "GitManager.createWorktree",
   )(function* (input, options) {
+    const projectSettings = yield* projectSettingsFor(input).pipe(
+      Effect.map(({ settings }) => settings),
+      Effect.orElseSucceed(() => null),
+    );
     const submodules =
       options?.submodules !== undefined
         ? options.submodules
-        : yield* projectSettingsFor(input).pipe(
-            Effect.map(({ settings }) => settings.worktreeSubmodules),
-            Effect.orElseSucceed(() => null),
-          );
-    const result = yield* gitCore.createWorktree(input, {
-      ...(yield* readWorktreeCreationSettings),
-      ...options,
-      submodules,
-    });
+        : (projectSettings?.worktreeSubmodules ?? null);
+    const result = yield* gitCore.createWorktree(
+      {
+        ...input,
+        path:
+          input.path ??
+          configuredWorktreePath(
+            input.cwd,
+            input.newRefName ?? input.refName,
+            projectSettings?.worktreeBaseDirectory ?? "",
+            path,
+          ),
+      },
+      { ...(yield* readWorktreeCreationSettings), ...options, submodules },
+    );
     if (input.newRefName && input.baseRefName) {
       yield* shareBranchBase(input.cwd, input.newRefName);
     }
@@ -3184,20 +3195,9 @@ export const make = Effect.gen(function* () {
       const createPullRequestWorktree = Effect.fn("createPullRequestWorktree")(function* (
         onWorktreeClaimed?: (path: string) => Effect.Effect<void>,
       ) {
-        return yield* gitCore.createWorktree(
-          {
-            cwd: input.cwd,
-            refName: localPullRequestBranch,
-            path: null,
-          },
-          {
-            ...(onWorktreeClaimed ? { progress: { onWorktreeClaimed } } : {}),
-            ...(yield* readWorktreeCreationSettings),
-            submodules: yield* projectSettingsFor(input).pipe(
-              Effect.map(({ settings }) => settings.worktreeSubmodules),
-              Effect.orElseSucceed(() => null),
-            ),
-          },
+        return yield* createWorktree(
+          { cwd: input.cwd, refName: localPullRequestBranch, path: null },
+          onWorktreeClaimed ? { progress: { onWorktreeClaimed } } : undefined,
         );
       });
 

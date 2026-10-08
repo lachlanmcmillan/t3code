@@ -13,7 +13,12 @@ import {
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { WorktreeCleanupSection, WorktreesDirectoryRow } from "./StorageSettings";
-import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
+import {
+  useScopedSettings,
+  useScopedSettingsMixed,
+  useUpdateScopedSettings,
+} from "./useScopedSettings";
+import { DraftInput } from "../ui/draft-input";
 
 function StartFromRemoteRow() {
   const settings = useScopedSettings();
@@ -51,6 +56,32 @@ function StartFromRemoteRow() {
   );
 }
 
+function ProjectWorktreeLocationRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const mixed = useScopedSettingsMixed(["worktreeBaseDirectory"]);
+  return (
+    <SettingsRow
+      serverScoped
+      settingKeys={["worktreeBaseDirectory"]}
+      mixed={mixed}
+      {...searchableSetting("worktree-base-directory")}
+      description="Base folder for new worktrees in this project. Each worktree gets a branch-named folder. Relative paths start at the project checkout; leave empty to use the server's worktree location."
+      control={
+        <DraftInput
+          size="sm"
+          value={mixed ? "" : settings.worktreeBaseDirectory}
+          onCommit={(next) => updateSettings({ worktreeBaseDirectory: next.trim() })}
+          placeholder={mixed ? "Mixed" : "Server worktree location"}
+          spellCheck={false}
+          autoCapitalize="none"
+          aria-label="Project worktree location"
+        />
+      }
+    />
+  );
+}
+
 export function WorktreesSettingsPanel() {
   const { scope } = useSettingsScope();
   const isProjectScope = scope.kind === "project" || scope.kind === "checkout";
@@ -58,7 +89,7 @@ export function WorktreesSettingsPanel() {
   return (
     <SettingsPageContainer>
       <SettingsSection id="worktree-creation" title="Creation">
-        {!isProjectScope && <WorktreesDirectoryRow />}
+        {isProjectScope ? <ProjectWorktreeLocationRow /> : <WorktreesDirectoryRow />}
         <StartFromRemoteRow />
         <AdvancedSettings targetIds={[searchableSetting("worktree-submodules").id]}>
           <WorktreeSubmodulesRow />

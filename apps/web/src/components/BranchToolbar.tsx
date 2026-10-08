@@ -41,6 +41,7 @@ import { openAddProjectToMachine } from "./AddProjectToMachineDialog";
 import { type AddProjectTarget, useAddProjectTargets } from "../hooks/useAddProjectTargets";
 import { BranchToolbarEnvModeSelector } from "./BranchToolbarEnvModeSelector";
 import { PreviousWorktreeItemContent } from "./PreviousWorktreeItemContent";
+import { WorkspaceFolderDialog } from "./WorkspaceFolderDialog";
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
 import {
   THREAD_DETAILS_PANEL_ICON_CLASS,
@@ -160,6 +161,7 @@ interface RunContextSelectorProps {
   onUsePreviousWorktree: () => void;
   addTargets: readonly AddProjectTarget[];
   onAddToMachine: (environmentId: EnvironmentId) => void;
+  onSelectFolder?: () => void;
 }
 
 const RunContextSelector = memo(function RunContextSelector({
@@ -183,6 +185,7 @@ const RunContextSelector = memo(function RunContextSelector({
   onUsePreviousWorktree,
   addTargets,
   onAddToMachine,
+  onSelectFolder,
 }: RunContextSelectorProps) {
   const composerFloatingLayerProps = useComposerMenuProps();
   const activeEnvironment =
@@ -221,7 +224,7 @@ const RunContextSelector = memo(function RunContextSelector({
           ? forceNewWorktree
             ? "Each model starts in its own worktree."
             : (workspacePath ?? workspaceLabel)
-          : workspaceLabel}
+          : (activeWorktreePath ?? workspaceLabel)}
       </TooltipPopup>
     </Tooltip>
   );
@@ -396,6 +399,10 @@ const RunContextSelector = memo(function RunContextSelector({
           <MenuRadioGroup
             value={effectiveEnvMode}
             onValueChange={(value) => {
+              if (value === "select-folder") {
+                onSelectFolder?.();
+                return;
+              }
               if (value === "previous-worktree") {
                 onUsePreviousWorktree();
                 return;
@@ -422,6 +429,14 @@ const RunContextSelector = memo(function RunContextSelector({
             {previousWorktreeLabel ? (
               <MenuRadioItem disabled={envModeLocked} value="previous-worktree" closeOnClick>
                 <PreviousWorktreeItemContent branch={previousWorktreeBranch} />
+              </MenuRadioItem>
+            ) : null}
+            {onSelectFolder ? (
+              <MenuRadioItem value="select-folder" closeOnClick>
+                <span className="flex items-center gap-1.5">
+                  <FolderIcon className="size-3" />
+                  Select folder…
+                </span>
               </MenuRadioItem>
             ) : null}
           </MenuRadioGroup>
@@ -621,6 +636,8 @@ export const BranchToolbar = memo(function BranchToolbar({
 }: BranchToolbarProps) {
   const branchSelectorRef = useRef<BranchToolbarBranchSelectorHandle>(null);
   const threadRef = scopeThreadRef(environmentId, threadId);
+  const [folderDialogOpen, setFolderDialogOpen] = useState(false);
+  const onSelectFolder = () => setFolderDialogOpen(true);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
   // The composer retains resolved thread details while bootstrap cleanup can remove its shell.
   const activeProjectRef = scopeProjectRef(environmentId, projectId);
@@ -688,9 +705,31 @@ export const BranchToolbar = memo(function BranchToolbar({
 
   if (!activeProject) return null;
 
+  const folderDialog =
+    folderDialogOpen && canUsePreviousWorktree ? (
+      <WorkspaceFolderDialog
+        key={`${environmentId}:${draftId ?? threadId}`}
+        environmentId={environmentId}
+        initialPath={activeWorktreePath ?? activeProject.workspaceRoot}
+        onClose={() => setFolderDialogOpen(false)}
+        onSelect={(path, branch) => {
+          setDraftThreadContext(draftId ?? threadRef, {
+            branch,
+            worktreePath: path === activeProject.workspaceRoot ? null : path,
+            envMode: "local",
+            environmentSelection: "manual",
+            projectRef: activeProjectRef,
+          });
+          setFolderDialogOpen(false);
+          onComposerFocusRequest?.();
+        }}
+      />
+    ) : null;
+
   if (layout === "panel") {
     return (
       <div className="flex w-full flex-col" data-thread-panel-run-context>
+        {folderDialog}
         {panelSection !== "branch" ? (
           <RunContextSelector
             displayMode="panel"
@@ -713,6 +752,7 @@ export const BranchToolbar = memo(function BranchToolbar({
             onUsePreviousWorktree={onUsePreviousWorktree}
             addTargets={addTargets}
             onAddToMachine={onAddToMachine}
+            {...(canUsePreviousWorktree ? { onSelectFolder } : {})}
           />
         ) : null}
         {panelSection !== "workspace" ? (
@@ -742,6 +782,7 @@ export const BranchToolbar = memo(function BranchToolbar({
       data-compact={labelsOverflow ? "" : undefined}
       className={cn("gap-1 text-xs font-normal text-foreground/70 dark:text-muted-foreground")}
     >
+      {folderDialog}
       {showGitControls ? (
         <div className="contents @xl/composer-surface:hidden">
           <RunContextSelector
@@ -763,6 +804,7 @@ export const BranchToolbar = memo(function BranchToolbar({
             onUsePreviousWorktree={onUsePreviousWorktree}
             addTargets={addTargets}
             onAddToMachine={onAddToMachine}
+            {...(canUsePreviousWorktree ? { onSelectFolder } : {})}
           />
         </div>
       ) : null}
@@ -804,6 +846,7 @@ export const BranchToolbar = memo(function BranchToolbar({
               previousWorktreeLabel={previousWorktreeLabel}
               previousWorktreeBranch={previousWorktreeSeed?.branch ?? null}
               onUsePreviousWorktree={onUsePreviousWorktree}
+              {...(canUsePreviousWorktree ? { onSelectFolder } : {})}
             />
           ) : null}
         </div>

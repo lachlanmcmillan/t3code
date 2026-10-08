@@ -3,7 +3,7 @@ import { SettingsRow } from "./components/SettingsRow";
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
-import { AppText as Text } from "../../components/ui/AppText";
+import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import {
   type ResponseStreamingMode,
   type ServerSettings,
@@ -66,6 +66,7 @@ const PAGE_PROJECT_KEYS: Record<SettingsPage, readonly ProjectScopedServerSettin
   ],
   "source-control": ["defaultAutoPull", "removeAgentCreditsOnMerge"],
   worktrees: [
+    "worktreeBaseDirectory",
     "newWorktreesStartFromOrigin",
     "worktreeSubmodules",
     "branchNamingMode",
@@ -487,6 +488,15 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     onValueChange={(value) => write({ newWorktreesStartFromOrigin: value })}
                   />
                 </SettingsSection>
+                {projectSelected ? (
+                  <WorktreeLocationSection
+                    key={`${selectedProjectKey}:${selectedTargets.map((target) => target.environmentId).join(",")}`}
+                    value={uniform("worktreeBaseDirectory")}
+                    mixed={isMixed("worktreeBaseDirectory")}
+                    disabled={disabledFor("worktreeBaseDirectory")}
+                    onCommit={(value) => write({ worktreeBaseDirectory: value })}
+                  />
+                ) : null}
                 <SettingsSection
                   title="Worktree submodules"
                   footer={managed("worktreeSubmodules")}
@@ -589,6 +599,48 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
         )}
       </ScrollView>
     </SettingsScreen>
+  );
+}
+
+function WorktreeLocationSection(props: {
+  readonly value: string | null;
+  readonly mixed: boolean;
+  readonly disabled: boolean;
+  readonly onCommit: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft !== null && !props.disabled) {
+      const next = draft.trim();
+      if (props.mixed || next !== props.value) props.onCommit(next);
+    }
+    setDraft(null);
+  };
+  return (
+    <SettingsSection
+      title="Project worktree location"
+      trailing={props.mixed ? <MixedValuesLabel projectSelected /> : null}
+    >
+      <View className="gap-3 p-4">
+        <Text className="text-sm leading-normal text-foreground-muted">
+          New worktrees get a branch-named folder here. Relative paths start at the project
+          checkout. Leave empty to use the server's worktree location.
+        </Text>
+        <AppTextInput
+          accessibilityLabel="Project worktree location"
+          className="min-h-11 rounded-xl bg-card px-3 text-base text-foreground"
+          value={draft ?? props.value ?? ""}
+          placeholder={props.mixed ? "Mixed" : "Server worktree location"}
+          onChangeText={setDraft}
+          onBlur={commit}
+          onSubmitEditing={commit}
+          returnKeyType="done"
+          autoCapitalize="none"
+          autoCorrect={false}
+          editable={!props.disabled}
+        />
+      </View>
+    </SettingsSection>
   );
 }
 
