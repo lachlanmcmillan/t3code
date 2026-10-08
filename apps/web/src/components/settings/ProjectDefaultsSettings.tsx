@@ -22,6 +22,7 @@ import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { runtimeModeConfig, runtimeModeOptions } from "../chat/runtimeModeConfig";
 import { PULL_REQUEST_MERGE_METHOD_LABELS } from "../pullRequest/pullRequestDetail.logic";
 import { TraitsPicker } from "../chat/TraitsPicker";
+import { DraftInput } from "../ui/draft-input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { toastManager } from "../ui/toast";
 import { Switch } from "../ui/switch";
@@ -77,6 +78,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
   const PermissionIcon = runtimeModeConfig[settings.defaultRuntimeMode].icon;
   const mixedWorkspace = useScopedSettingsMixed(["defaultThreadEnvMode"]);
   const mixedSubmodules = useScopedSettingsMixed(["worktreeSubmodules"]);
+  const mixedWorktreeBaseDirectory = useScopedSettingsMixed(["worktreeBaseDirectory"]);
   const mixedBrowser = useScopedSettingsMixed(["enableAgentBrowserAccess"]);
   const mixedAutoPull = useScopedSettingsMixed(["defaultAutoPull"]);
   const mixedAgentCredits = useScopedSettingsMixed(["removeAgentCreditsOnMerge"]);
@@ -269,6 +271,24 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
         <>
           {modelRow}
           {workspaceRow}
+          <SettingsRow
+            serverScoped
+            settingKeys={["worktreeBaseDirectory"]}
+            mixed={mixedWorktreeBaseDirectory}
+            {...searchableSetting("worktree-base-directory")}
+            description="Base folder for new worktrees in this project. Each worktree gets a branch-named folder. Relative paths start at the project checkout; leave empty to use the server's worktree location."
+            control={
+              <DraftInput
+                size="sm"
+                value={mixedWorktreeBaseDirectory ? "" : settings.worktreeBaseDirectory}
+                onCommit={(next) => updateSettings({ worktreeBaseDirectory: next.trim() })}
+                placeholder={mixedWorktreeBaseDirectory ? "Mixed" : "Server worktree location"}
+                spellCheck={false}
+                autoCapitalize="none"
+                aria-label="Project worktree location"
+              />
+            }
+          />
         </>
       ) : category === "general" ? (
         <>

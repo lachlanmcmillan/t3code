@@ -693,6 +693,33 @@ function preparePullRequestThread(
   return manager.preparePullRequestThread(input);
 }
 
+function seedWorktreeProject(projectId: ProjectId, workspaceRoot: string) {
+  return Effect.gen(function* () {
+    const createdAt = "2026-09-27T00:00:00.000Z";
+    yield* (yield* ProjectStore.ProjectStoreV2).apply({
+      sequence: 1,
+      eventId: EventId.make(`event:worktree:${projectId}`),
+      aggregateKind: "project",
+      aggregateId: projectId,
+      occurredAt: createdAt,
+      commandId: null,
+      causationEventId: null,
+      correlationId: null,
+      metadata: {},
+      type: "project.created",
+      payload: {
+        projectId,
+        title: "Worktree project",
+        workspaceRoot,
+        defaultModelSelection: null,
+        scripts: [],
+        createdAt,
+        updatedAt: createdAt,
+      },
+    });
+  });
+}
+
 function makeManager(input?: {
   ghScenario?: FakeGhScenario;
   sourceControlProvider?: SourceControlProvider["Service"];
@@ -797,6 +824,59 @@ const layerGitManagerTest = GitVcsDriver.layer.pipe(
 );
 
 it.layer(layerGitManagerTest)("GitManager", (it) => {
+  it.effect("creates worktrees in the project's folder and honors explicit paths", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3-project-worktrees-");
+      yield* initRepo(repoDir);
+      const environmentDir = yield* makeTempDir("t3-environment-worktrees-");
+      const projectId = ProjectId.make("project:worktree-location");
+      const { manager } = yield* makeManager({
+        serverSettings: {
+          worktreesDirectory: environmentDir,
+          projectSettingsOverrides: { [projectId]: { worktreeBaseDirectory: ".worktrees" } },
+        },
+        seed: seedWorktreeProject(projectId, repoDir),
+      });
+      const created = yield* manager.createWorktree({
+        cwd: repoDir,
+        refName: "main",
+        newRefName: "feature/project-location",
+        path: null,
+      });
+      expect(created.worktree.path).toBe(
+        NodePath.join(repoDir, ".worktrees", "feature-project-location"),
+      );
+      expect(
+        (yield* runGit(created.worktree.path, ["branch", "--show-current"])).stdout.trim(),
+      ).toBe("feature/project-location");
+
+      const explicitPath = NodePath.join(repoDir, "explicit-worktree");
+      const explicit = yield* manager.createWorktree({
+        cwd: repoDir,
+        refName: "main",
+        newRefName: "feature/explicit",
+        path: explicitPath,
+      });
+      expect(explicit.worktree.path).toBe(explicitPath);
+
+      const inherited = yield* makeManager({
+        serverSettings: {
+          worktreesDirectory: environmentDir,
+          projectSettingsOverrides: { [projectId]: { worktreeBaseDirectory: "" } },
+        },
+        seed: seedWorktreeProject(projectId, repoDir),
+      });
+      const fallback = yield* inherited.manager.createWorktree({
+        cwd: repoDir,
+        refName: "main",
+        newRefName: "feature/inherited",
+        path: null,
+      });
+      expect(fallback.worktree.path).toBe(
+        NodePath.join(environmentDir, NodePath.basename(repoDir), "feature-inherited"),
+      );
+    }),
+  );
   it.effect("passive worktree status streams do not start remote refreshes", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-passive-vcs-");
@@ -4816,7 +4896,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       }),
   );
 
-  it.effect("prepares pull request threads in worktree mode on the PR head branch", () =>
+  it.effect("prepares pull request worktrees in the project's folder on the PR head branch", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
       yield* initRepo(repoDir);
@@ -4842,6 +4922,12 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
             state: "open",
           },
         },
+        serverSettings: {
+          projectSettingsOverrides: {
+            [ProjectId.make("project:pr-worktree")]: { worktreeBaseDirectory: ".worktrees" },
+          },
+        },
+        seed: seedWorktreeProject(ProjectId.make("project:pr-worktree"), repoDir),
       });
 
       const result = yield* preparePullRequestThread(manager, {
@@ -4851,6 +4937,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       });
 
       expect(result.branch).toBe("feature/pr-worktree");
+      expect(result.worktreePath).toBe(NodePath.join(repoDir, ".worktrees", "feature-pr-worktree"));
       expect(result.worktreePath).not.toBeNull();
       expect(NodeFS.existsSync(result.worktreePath as string)).toBe(true);
       const worktreeBranch = (yield* runGit(result.worktreePath as string, [

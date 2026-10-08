@@ -65,6 +65,7 @@ import {
 } from "../textGeneration/TextGenerationPresets.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import { configuredWorktreePath } from "./worktreePath.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import { extractBranchNameFromRemoteRef } from "./remoteRefs.ts";
@@ -745,15 +746,26 @@ export const make = Effect.gen(function* () {
   const createWorktree: GitManager["Service"]["createWorktree"] = Effect.fn(
     "GitManager.createWorktree",
   )(function* (input, options) {
+    const projectSettings = yield* projectSettingsFor(input).pipe(Effect.orElseSucceed(() => null));
     const submodules =
       options?.submodules !== undefined
         ? options.submodules
-        : yield* projectSettingsFor(input).pipe(
-            Effect.map((settings) => settings.worktreeSubmodules),
-            Effect.orElseSucceed(() => null),
-          );
+        : (projectSettings?.worktreeSubmodules ?? null);
     const worktreesDirectory = yield* readWorktreesDirectory;
-    return yield* gitCore.createWorktree(input, { worktreesDirectory, ...options, submodules });
+    return yield* gitCore.createWorktree(
+      {
+        ...input,
+        path:
+          input.path ??
+          configuredWorktreePath(
+            input.cwd,
+            input.newRefName ?? input.refName,
+            projectSettings?.worktreeBaseDirectory ?? "",
+            path,
+          ),
+      },
+      { worktreesDirectory, ...options, submodules },
+    );
   });
 
   const readRepositoryInstructions = (cwd: string, fileName: string) =>
@@ -2613,21 +2625,11 @@ export const make = Effect.gen(function* () {
         });
       }
 
-      const worktree = yield* gitCore.createWorktree(
-        {
-          cwd: input.cwd,
-          refName: localPullRequestBranch,
-          path: null,
-        },
-        {
-          worktreesDirectory: yield* readWorktreesDirectory,
-          // Best effort: a settings read failure falls back to the checkout's t3.json.
-          submodules: yield* projectSettingsFor(input).pipe(
-            Effect.map((settings) => settings.worktreeSubmodules),
-            Effect.orElseSucceed(() => null),
-          ),
-        },
-      );
+      const worktree = yield* createWorktree({
+        cwd: input.cwd,
+        refName: localPullRequestBranch,
+        path: null,
+      });
       yield* ensureExistingWorktreeUpstream(worktree.worktree.path);
       yield* maybeRunSetupScript(worktree.worktree.path);
 

@@ -12,7 +12,7 @@ import type {
   TerminalSummary,
   WorktreeCleanupRules,
 } from "@t3tools/contracts";
-import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
+import { resolveProjectSettings, resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -28,6 +28,7 @@ import * as Stream from "effect/Stream";
 
 import * as ServerConfig from "./config.ts";
 import * as GitManager from "./git/GitManager.ts";
+import { configuredWorktreePath } from "./git/worktreePath.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
@@ -221,7 +222,6 @@ export const make = Effect.gen(function* () {
       );
       if (root !== null && !isFilesystemRoot(root, path)) roots.push(root);
     }
-    if (roots.length === 0) return;
     const hasDeleteRule = anyWorktreePolicy(serverSettings, (rules) => rules.worktreeOnDelete);
     const deletedRows = hasDeleteRule
       ? yield* sql<{ payload_json: string; workspaceRoot: string }>`
@@ -272,7 +272,27 @@ export const make = Effect.gen(function* () {
         const realPath = yield* fs.realPath(worktreePath);
         const realParent = yield* fs.realPath(path.dirname(worktreePath));
         if (realPath !== path.join(realParent, path.basename(worktreePath))) return;
-        if (!roots.some((root) => inside(root, realPath))) return;
+        const configuredPath = configuredWorktreePath(
+          project.workspaceRoot,
+          thread.branch ?? "",
+          resolveProjectSettings(serverSettings, thread.projectId).settings.worktreeBaseDirectory,
+          path,
+        );
+        const projectRoot =
+          configuredPath === null
+            ? null
+            : yield* fs
+                .realPath(path.dirname(configuredPath))
+                .pipe(Effect.orElseSucceed(() => null));
+        if (
+          !roots.some((root) => inside(root, realPath)) &&
+          !(
+            projectRoot !== null &&
+            !isFilesystemRoot(projectRoot, path) &&
+            inside(projectRoot, realPath)
+          )
+        )
+          return;
         if (yield* containsProjectRoot(worktreePath, [project, ...snapshot.projects])) return;
         // A linked worktree has a .git file. Never remove a main checkout.
         if ((yield* fs.stat(path.join(worktreePath, ".git"))).type !== "File") return;

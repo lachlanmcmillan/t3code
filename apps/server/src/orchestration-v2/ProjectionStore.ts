@@ -309,6 +309,8 @@ export interface ProjectionTimelinePage {
 }
 
 export interface ProjectionStoreV2Shape {
+  /** Recorded worktrees, including archived threads, without hydrating thread history. */
+  readonly getWorktreePaths: () => Effect.Effect<ReadonlyArray<string>, ProjectionStoreV2Error>;
   readonly getThreadAttachmentIds: (
     threadId: ThreadId,
   ) => Effect.Effect<ReadonlyArray<string>, ProjectionStoreV2Error>;
@@ -5672,6 +5674,15 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
 
     return {
       apply,
+      getWorktreePaths: () =>
+        sql<{ path: string }>`
+        SELECT DISTINCT json_extract(payload_json, '$.worktreePath') AS path
+        FROM orchestration_v2_projection_threads
+        WHERE deleted_at IS NULL AND json_extract(payload_json, '$.worktreePath') IS NOT NULL
+      `.pipe(
+          Effect.map((rows) => rows.map((row) => row.path)),
+          Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })),
+        ),
       getShellSnapshot,
       getThreadShell,
       getThread,
@@ -5715,6 +5726,18 @@ export const layerMemory: Layer.Layer<ProjectionStoreV2> = Layer.effect(
     const sequence = yield* Ref.make(0);
 
     const service: ProjectionStoreV2Shape = {
+      getWorktreePaths: () =>
+        Ref.get(replayState).pipe(
+          Effect.map((state) => [
+            ...new Set(
+              [...state.projections.values()].flatMap(({ thread }) =>
+                thread.deletedAt === null && thread.worktreePath !== null
+                  ? [thread.worktreePath]
+                  : [],
+              ),
+            ),
+          ]),
+        ),
       apply: (event) =>
         Effect.gen(function* () {
           const result = yield* Ref.modify(replayState, (existing) => {

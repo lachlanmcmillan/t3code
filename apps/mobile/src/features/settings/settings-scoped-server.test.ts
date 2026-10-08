@@ -66,6 +66,47 @@ function environment(environmentId: EnvironmentId, settings: ServerSettings): Se
 }
 
 describe("mobile project settings scope", () => {
+  it("stores a worktree folder on the selected project and clears it with New threads defaults", () => {
+    const settings: ServerSettings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      projectSettingsOverrides: { [firstProject]: { defaultAutoPull: true } },
+    };
+    const targets = resolveMobileSettingsTargets(
+      [environment(firstId, settings)],
+      [{ environmentId: firstId, id: firstProject }],
+    );
+    expect(
+      planMobileScopedSettingsPatch(targets, true, { worktreeBaseDirectory: ".worktrees" }),
+    ).toEqual([
+      {
+        environmentId: firstId,
+        patch: {
+          projectSettingsOverrides: {
+            [firstProject]: { defaultAutoPull: true, worktreeBaseDirectory: ".worktrees" },
+          },
+        },
+      },
+    ]);
+
+    const withLocation = resolveMobileSettingsTargets(
+      [
+        environment(firstId, {
+          ...settings,
+          projectSettingsOverrides: {
+            [firstProject]: { defaultAutoPull: true, worktreeBaseDirectory: ".worktrees" },
+          },
+        }),
+      ],
+      [{ environmentId: firstId, id: firstProject }],
+    );
+    expect(planMobileScopedSettingsClear(withLocation, ["worktreeBaseDirectory"])).toEqual([
+      {
+        environmentId: firstId,
+        patch: { projectSettingsOverrides: { [firstProject]: { defaultAutoPull: true } } },
+      },
+    ]);
+  });
+
   it("edits each checkout's own override without changing either environment default", () => {
     const firstSettings: ServerSettings = {
       ...DEFAULT_SERVER_SETTINGS,

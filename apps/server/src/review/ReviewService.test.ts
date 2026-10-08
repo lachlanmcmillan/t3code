@@ -6,6 +6,7 @@ import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
 
 import * as ServerConfig from "../config.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
@@ -17,8 +18,14 @@ function layer(input: {
   readonly detectCalls?: Array<{ readonly cwd: string }>;
   readonly worktreesDirectory?: string;
   readonly previousWorktreesDirectories?: ReadonlyArray<string>;
+  readonly recordedWorktreePaths?: ReadonlyArray<string>;
 }) {
   return ReviewService.layer.pipe(
+    Layer.provide(
+      Layer.mock(ProjectionStore.ProjectionStoreV2)({
+        getWorktreePaths: () => Effect.succeed(input.recordedWorktreePaths ?? []),
+      }),
+    ),
     Layer.provide(
       Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
         get: () => Effect.die("unexpected VCS registry get"),
@@ -43,6 +50,33 @@ function layer(input: {
 }
 
 describe("ReviewService", () => {
+  it.effect("allows recorded project worktrees while rejecting adjacent folders", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
+      const worktrees = yield* fs.makeTempDirectoryScoped({
+        prefix: "t3-review-project-worktrees-",
+      });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
+      const worktree = `${worktrees}/feature-demo`;
+      const adjacent = `${worktrees}/unrecorded`;
+      yield* fs.makeDirectory(`${worktree}/src`, { recursive: true });
+      yield* fs.makeDirectory(adjacent);
+      const detectCalls: Array<{ readonly cwd: string }> = [];
+      yield* Effect.gen(function* () {
+        const review = yield* ReviewService.ReviewService;
+        const result = yield* review.getDiffPreview({ cwd: `${worktree}/src` });
+        assert.strictEqual(result.cwd, `${worktree}/src`);
+        const error = yield* review.getDiffPreview({ cwd: adjacent }).pipe(Effect.flip);
+        assert.strictEqual(error._tag, "VcsRepositoryDetectionError");
+        assert.deepStrictEqual(detectCalls, [{ cwd: `${worktree}/src` }]);
+      }).pipe(
+        Effect.provide(
+          layer({ workspaceRoot, baseDir, detectCalls, recordedWorktreePaths: [worktree] }),
+        ),
+      );
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
   it.effect("rejects diff preview cwd outside the configured workspace roots", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

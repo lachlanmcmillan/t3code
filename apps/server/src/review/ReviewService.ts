@@ -16,6 +16,7 @@ import {
 } from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -41,6 +42,7 @@ export const make = Effect.gen(function* () {
   const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const settings = yield* ServerSettings.ServerSettingsService;
+  const threads = yield* ProjectionStore.ProjectionStoreV2;
 
   const canonicalizePath = (value: string) => {
     const resolvedPath = path.resolve(value);
@@ -93,6 +95,22 @@ export const make = Effect.gen(function* () {
       worktreesRoots.some((root) => isWithinRoot(candidate, root))
     ) {
       return;
+    }
+
+    const recordedPaths = yield* threads.getWorktreePaths().pipe(
+      Effect.mapError(
+        (cause) =>
+          new VcsRepositoryDetectionError({
+            operation,
+            cwd,
+            cause,
+            detail: "Failed to look up the review workspace.",
+          }),
+      ),
+    );
+    for (const recordedPath of recordedPaths) {
+      const recordedRoot = yield* canonicalizePath(recordedPath);
+      if (isWithinRoot(candidate, recordedRoot)) return;
     }
 
     return yield* new VcsRepositoryDetectionError({

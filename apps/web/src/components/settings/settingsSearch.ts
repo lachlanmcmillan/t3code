@@ -171,6 +171,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["name icon emoji image checkout remove delete"],
   },
   {
+    id: "worktree-base-directory",
+    title: "Project worktree location",
+    to: "/settings/projects",
+    scope: "project",
+    searchTerms: ["custom worktree base folder directory branch path"],
+  },
+  {
     id: "default-model",
     title: "Default model",
     to: "/settings/general",

@@ -872,6 +872,24 @@ describe("provider enabled defaults", () => {
 });
 
 describe("ServerSettings worktree defaults", () => {
+  it("persists a project worktree base directory and defaults older settings to empty", () => {
+    expect(decodeServerSettings({}).worktreeBaseDirectory).toBe("");
+    const patch = decodeServerSettingsPatch({
+      projectSettingsOverrides: {
+        project: { worktreeBaseDirectory: "  ~/Projects/example/.worktrees  " },
+      },
+    });
+    expect(patch.projectSettingsOverrides).toEqual({
+      project: { worktreeBaseDirectory: "~/Projects/example/.worktrees" },
+    });
+    const stored = decodeServerSettings({
+      projectSettingsOverrides: patch.projectSettingsOverrides,
+    });
+    expect(encodeServerSettings(stored).projectSettingsOverrides).toEqual({
+      project: { worktreeBaseDirectory: "~/Projects/example/.worktrees" },
+    });
+  });
+
   it("defaults the thread env mode to inherit and keeps stored values", () => {
     expect(decodeServerSettings({}).defaultThreadEnvMode).toBeNull();
     expect(decodeServerSettings({ defaultThreadEnvMode: "worktree" }).defaultThreadEnvMode).toBe(

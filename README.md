@@ -1,5 +1,51 @@
 # T3 Code
 
+## Fork changes
+
+This fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code) adds the following
+behavior on top of upstream:
+
+- **Per-project worktree locations.** In **Settings → Project → New threads → Project
+  worktree location**, choose a base folder for each project. Relative paths such as
+  `.worktrees` start at the project checkout; absolute paths and `~/…` are also supported.
+  New worktrees get a branch-named subfolder, with `/` in branch names replaced by `-`.
+  Leaving the setting empty inherits the environment's worktree location. The setting is
+  available on web, desktop, and mobile and applies to new threads, manual creation, pull
+  request worktrees, MCP tools, and scheduled tasks. Review diffs and automatic cleanup
+  support these folders; existing worktrees stay where they are.
+- **Select an existing workspace folder.** Before starting a thread on web or desktop,
+  choose **Workspace → Select folder…** to browse to an existing checkout or worktree.
+  Both the full and compact workspace menus, and the thread details panel, support this.
+  Browsing happens on the selected environment, including remote servers. The picker
+  checks that the folder belongs to a source control repository and uses its current branch.
+  Choosing the project checkout again clears the selected worktree.
+- **Temporary branches without a namespace.** New temporary worktree branches use
+  `worktree-<8 hex>` instead of `t3/<8 hex>` or `t3code/<8 hex>`. Legacy temporary branch
+  names remain recognized so existing threads can still receive generated branch names.
+- **Optional default expansion for thinking and tools.** Enable **Expand thinking by
+  default** and **Expand tool output by default** in **Settings → General** on web and
+  desktop, or **Settings → Thread behavior** on mobile. These device preferences open
+  thinking traces and tool commands/output automatically. Both are off by default, and
+  individual items can still be collapsed.
+- **Expansion preferences after completed turns.** Default expansion also applies to
+  completed turns and their grouped work. Finishing a turn does not hide the thinking or
+  tool output enabled by those preferences; groups and individual items can still be
+  collapsed and reopened.
+
+### Earlier fork changes now provided by upstream
+
+- **Generated branch names without a prefix.** Our original patch is now covered by
+  **Settings → Source control → Worktree branch naming → Static prefix**. Clear
+  **Branch prefix** to generate names without `t3/`. This requires configuring the
+  setting; upstream's default still adds the prefix.
+- **Full output for expanded tool calls.** Upstream now loads the full saved command and
+  output when a tool call is expanded, replacing our original patch.
+
+The installation links below install upstream builds. To use these fork changes, build
+this checkout; see [Desktop artifacts](docs/operations/development.md#desktop-artifacts).
+
+---
+
 T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
 
 Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, and Google Antigravity. If they're set up on your computer, T3 Code can control them.
