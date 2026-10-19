@@ -1181,6 +1181,7 @@ const make = Effect.gen(function* () {
           thread.branch,
           resolveProjectSettings(serverSettings, thread.projectId).settings.worktreeBaseDirectory,
           path,
+          yield* HostProcess.HomeDirectory,
         );
         const projectRoot =
           configuredPath === null

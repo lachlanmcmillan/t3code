@@ -12,21 +12,41 @@ it.layer(Path.layer)("configuredWorktreePath", (it) => {
   it.effect("inherits the server-wide location when the project folder is empty", () =>
     Effect.gen(function* () {
       const path = yield* Path.Path;
-      expect(configuredWorktreePath("/projects/example", "feature/demo", " ", path)).toBeNull();
+      expect(
+        configuredWorktreePath("/projects/example", "feature/demo", " ", path, NodeOS.homedir()),
+      ).toBeNull();
     }),
   );
 
   it.effect("resolves relative, absolute, and home folders on the server", () =>
     Effect.gen(function* () {
       const path = yield* Path.Path;
-      expect(configuredWorktreePath("/projects/example", "feature/demo", ".worktrees", path)).toBe(
-        NodePath.join("/projects/example/.worktrees", "feature-demo"),
-      );
-      expect(configuredWorktreePath("/projects/example", "feature/demo", "/worktrees", path)).toBe(
-        NodePath.join("/worktrees", "feature-demo"),
-      );
       expect(
-        configuredWorktreePath("/projects/example", "feature/demo", "~/.worktrees", path),
+        configuredWorktreePath(
+          "/projects/example",
+          "feature/demo",
+          ".worktrees",
+          path,
+          NodeOS.homedir(),
+        ),
+      ).toBe(NodePath.join("/projects/example/.worktrees", "feature-demo"));
+      expect(
+        configuredWorktreePath(
+          "/projects/example",
+          "feature/demo",
+          "/worktrees",
+          path,
+          NodeOS.homedir(),
+        ),
+      ).toBe(NodePath.join("/worktrees", "feature-demo"));
+      expect(
+        configuredWorktreePath(
+          "/projects/example",
+          "feature/demo",
+          "~/.worktrees",
+          path,
+          NodeOS.homedir(),
+        ),
       ).toBe(NodePath.join(NodeOS.homedir(), ".worktrees", "feature-demo"));
     }),
   );

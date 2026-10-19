@@ -55,6 +55,7 @@ import {
   sanitizeFeatureBranchName,
 } from "@t3tools/shared/git";
 import { isSshRemoteUrl } from "@t3tools/shared/sourceControl";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import {
   type ChangeRequestTerminology,
   UNKNOWN_SOURCE_CONTROL_CLIENT,
@@ -804,6 +805,7 @@ export const make = Effect.gen(function* () {
             input.newRefName ?? input.refName,
             projectSettings?.worktreeBaseDirectory ?? "",
             path,
+            yield* HostProcess.HomeDirectory,
           ),
       },
       { ...(yield* readWorktreeCreationSettings), ...options, submodules },

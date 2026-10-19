@@ -1,6 +1,6 @@
 import type * as Path from "effect/Path";
 
-import { expandHomePathWith } from "../pathExpansion.ts";
+import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 
 /** Empty inherits the server-wide location; configured folders contain one child per branch. */
 export function configuredWorktreePath(
@@ -8,11 +8,12 @@ export function configuredWorktreePath(
   branch: string,
   baseDirectory: string,
   path: Path.Path,
+  home: string,
 ): string | null {
   const configured = baseDirectory.trim();
   if (configured === "") return null;
   return path.join(
-    path.resolve(repositoryCwd, expandHomePathWith(configured, path)),
+    path.resolve(repositoryCwd, expandHomePath(configured, home)),
     branch.replaceAll("/", "-"),
   );
 }

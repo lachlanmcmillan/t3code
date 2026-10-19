@@ -1,5 +1,3 @@
-// @effect-diagnostics nodeBuiltinImport:off
-import * as NodeChildProcess from "node:child_process";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -10,7 +8,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
-import type * as Path from "effect/Path";
+import * as Path from "effect/Path";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { SCAN_CACHE_FILE_NAME } from "./usage/usageScanCache.ts";
@@ -51,10 +49,6 @@ import {
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
-import * as Clock from "effect/Clock";
-import * as Path from "effect/Path";
-import * as SqlitePersistence from "./persistence/Sqlite.ts";
-import * as VcsProcess from "./vcs/VcsProcess.ts";
 import {
   storageCleanupActivityAt,
   storageCleanupPullRequestMerged,
@@ -63,130 +57,6 @@ import {
 
 const NOW_MS = Date.parse("2026-06-10T12:00:00.000Z");
 const DAY_MS = 24 * 60 * 60 * 1_000;
-
-for (const scenario of [
-  "relative",
-  "absolute",
-  "linked-parent",
-  "linked-worktree",
-  "outside",
-  "dirty",
-] as const) {
-  it.effect(`project worktree cleanup: ${scenario}`, () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const now = yield* Clock.currentTimeMillis;
-      const temporary = yield* fs.makeTempDirectoryScoped({ prefix: "t3-project-cleanup-" });
-      const root = yield* fs.realPath(temporary);
-      const repository = path.join(root, "repository");
-      const baseDir = path.join(root, "t3-home");
-      yield* fs.makeDirectory(repository);
-      const runGit = (args: string[]) =>
-        Effect.sync(() =>
-          NodeChildProcess.execFileSync("git", args, { cwd: repository, stdio: "pipe" }),
-        );
-      yield* runGit(["init", "--initial-branch=main"]);
-      yield* runGit([
-        "-c",
-        "user.name=Test",
-        "-c",
-        "user.email=test@example.com",
-        "commit",
-        "--allow-empty",
-        "-m",
-        "Initial",
-      ]);
-      const configuredBase =
-        scenario === "absolute" ? path.join(root, "custom-worktrees") : ".worktrees";
-      const projectBase = path.resolve(repository, configuredBase);
-      if (scenario === "linked-parent") {
-        const realBase = path.join(root, "real-worktrees");
-        yield* fs.makeDirectory(realBase);
-        yield* fs.symlink(realBase, projectBase);
-      }
-      const actualWorktree =
-        scenario === "outside" || scenario === "linked-worktree"
-          ? path.join(root, "external-worktree")
-          : path.join(projectBase, "feature-demo");
-      yield* runGit(["worktree", "add", "-b", "feature/demo", actualWorktree, "main"]);
-      const recordedPath =
-        scenario === "linked-worktree" ? path.join(projectBase, "feature-demo") : actualWorktree;
-      if (scenario === "linked-worktree") {
-        yield* fs.makeDirectory(projectBase);
-        yield* fs.symlink(actualWorktree, recordedPath);
-      }
-      if (scenario === "dirty")
-        yield* fs.writeFileString(path.join(actualWorktree, "uncommitted.txt"), "keep");
-      const thread = shell({
-        branch: "feature/demo",
-        worktreePath: recordedPath,
-        createdAt: DateTime.makeUnsafe(now - 10 * DAY_MS),
-        updatedAt: DateTime.makeUnsafe(now - 10 * DAY_MS),
-      });
-      const sweepStarted = yield* Deferred.make<void>();
-      const testLayer = Layer.mergeAll(
-        Layer.mock(ProjectionStore.ProjectionStoreV2)({
-          getThreadWorktreePaths: () =>
-            Effect.succeed([{ threadId: thread.id, worktreePath: recordedPath }]),
-          getThreadShell: () => Effect.succeed(thread),
-          getShellSnapshot: (options) =>
-            Deferred.succeed(sweepStarted, undefined).pipe(
-              Effect.as({
-                schemaVersion: 2,
-                snapshotSequence: 0,
-                threads: options?.location === "archive" ? [] : [thread],
-                archivedThreads: [],
-              }),
-            ),
-        }),
-        Layer.mock(ProjectStore.ProjectStoreV2)({
-          listShells: () =>
-            Effect.succeed([
-              {
-                id: thread.projectId,
-                title: "Project",
-                workspaceRoot: repository,
-                defaultModelSelection: null,
-                scripts: [],
-                createdAt: "2026-06-01T00:00:00.000Z",
-                updatedAt: "2026-06-01T00:00:00.000Z",
-              },
-            ]),
-        }),
-        Layer.succeed(ServerActivation, Effect.void),
-        Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
-          isLive: () => Effect.succeed(false),
-        }),
-        Layer.mock(Orchestrator.OrchestratorV2)({ streamDomainEvents: Stream.never }),
-        Layer.mock(TerminalManager.TerminalManager)({
-          subscribeMetadata: () => Effect.succeed(() => {}),
-        }),
-        Layer.mock(GitManager.GitManager)({ invalidateStatus: () => Effect.void }),
-        Settings.ServerSettingsService.layerTest({
-          projectSettingsOverrides: {
-            [thread.projectId]: { worktreeBaseDirectory: configuredBase },
-          },
-          storageCleanup: { worktreeAfterDays: 1 },
-        }),
-        SqlitePersistence.layerMemory,
-        GitVcsDriver.layer.pipe(
-          Layer.provide(VcsProcess.layer),
-          Layer.provide(ServerConfig.layerTest(repository, baseDir)),
-        ),
-        ServerConfig.layerTest(repository, baseDir),
-      ).pipe(Layer.provideMerge(NodeServices.layer));
-      const context = yield* Layer.build(StorageCleanup.layer.pipe(Layer.provide(testLayer)));
-      const cleanup = Context.get(context, StorageCleanup.StorageCleanup);
-      yield* cleanup.start();
-      yield* Deferred.await(sweepStarted);
-      yield* cleanup.drain;
-      const removed = ["relative", "absolute", "linked-parent"].includes(scenario);
-      expect(yield* fs.exists(actualWorktree)).toBe(!removed);
-      expect(yield* fs.exists(repository)).toBe(true);
-    }).pipe(Effect.provide(NodeServices.layer)),
-  );
-}
 
 function at(offsetMs: number): DateTime.Utc {
   return DateTime.makeUnsafe(NOW_MS + offsetMs);
@@ -3301,6 +3171,57 @@ it.live("keeps saved usage data when removing a settled checkout", () =>
       yield* fixture.fs.writeFileString(cachePath, savedUsage);
       expect((yield* fixture.service.runNow).counts.removed).toBe(1);
       expect(yield* fixture.fs.readFileString(cachePath)).toBe(savedUsage);
+    }),
+  ),
+);
+
+it.live.each([
+  "relative",
+  "absolute",
+  "linked-parent",
+  "linked-worktree",
+  "outside",
+  "dirty",
+] as const)("cleans a project worktree location only when it is safe: %s", (scenario) =>
+  runCleanupTest(
+    Effect.gen(function* () {
+      const fixture = yield* cleanupFixture();
+      const { fs, repo, command } = fixture;
+      const path = yield* Path.Path;
+      const root = yield* fs.realPath(
+        yield* fs.makeTempDirectoryScoped({ prefix: "project-worktrees-" }),
+      );
+      const configuredBase =
+        scenario === "absolute" ? path.join(root, "custom-worktrees") : ".worktrees";
+      const projectBase = path.resolve(repo, configuredBase);
+      if (scenario === "linked-parent") {
+        const realBase = path.join(root, "real-worktrees");
+        yield* fs.makeDirectory(realBase);
+        yield* fs.symlink(realBase, projectBase);
+      }
+      const actualWorktree =
+        scenario === "outside" || scenario === "linked-worktree"
+          ? path.join(root, "external-worktree")
+          : path.join(projectBase, "project-demo");
+      yield* command(repo, ["worktree", "add", "-b", "project/demo", actualWorktree]);
+      const recordedPath =
+        scenario === "linked-worktree" ? path.join(projectBase, "project-demo") : actualWorktree;
+      if (scenario === "linked-worktree") {
+        yield* fs.makeDirectory(projectBase, { recursive: true });
+        yield* fs.symlink(actualWorktree, recordedPath);
+      }
+      if (scenario === "dirty")
+        yield* fs.writeFileString(path.join(actualWorktree, "tracked.txt"), "uncommitted\n");
+      fixture.setThreads([shell({ branch: "project/demo", worktreePath: recordedPath })]);
+      fixture.setSettings({
+        projectSettingsOverrides: {
+          [ProjectId.make("project-1")]: { worktreeBaseDirectory: configuredBase },
+        },
+      });
+      yield* fixture.service.runNow;
+      const removed = ["relative", "absolute", "linked-parent"].includes(scenario);
+      expect(yield* fs.exists(actualWorktree)).toBe(!removed);
+      expect(yield* fs.exists(repo)).toBe(true);
     }),
   ),
 );

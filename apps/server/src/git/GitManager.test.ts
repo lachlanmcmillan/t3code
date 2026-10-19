@@ -950,9 +950,10 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         newRefName: "feature/inherited",
         path: null,
       });
-      expect(fallback.worktree.path).toBe(
-        NodePath.join(environmentDir, NodePath.basename(repoDir), "feature-inherited"),
+      expect(NodePath.dirname(fallback.worktree.path)).toBe(
+        NodePath.join(environmentDir, NodePath.basename(repoDir)),
       );
+      expect(NodePath.basename(fallback.worktree.path)).toMatch(/^feature-inherited-[0-9a-f]+$/);
     }),
   );
   it.effect("status reports the listed PR whose head is the branch", () =>

@@ -1,5 +1,3 @@
-// @vitest-environment jsdom
-
 import { EnvironmentId } from "@t3tools/contracts";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
