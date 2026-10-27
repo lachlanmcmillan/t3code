@@ -55,13 +55,10 @@ export function WorkspaceFolderDialog({
     setPath(nextPath);
     setBrowsePath(nextPath);
   };
+  // Status is a live subscription: each update arrives as a Success that stays
+  // `waiting` while the stream is open, so isPending never clears here.
   const canSelect = Boolean(
-    resolvedPath &&
-    path === browsePath &&
-    status.isSuccess &&
-    !status.isPending &&
-    !status.error &&
-    status.data?.isRepo,
+    resolvedPath && path === browsePath && status.isSuccess && status.data?.isRepo,
   );
 
   return (
