@@ -67,3 +67,18 @@ it("checks revocation and regrant when a retained editor callback is invoked", a
   });
   expect(state.setPreference).toHaveBeenCalledTimes(1);
 });
+
+it("opens a real editor even after the file manager was last used, and the file manager only when it is all there is", async () => {
+  state.allowed.add(primary);
+  state.getPreference.mockReturnValue("file-manager");
+  const open = useOpenInPreferredEditor(primary, ["file-manager", "cursor"]);
+  expect(await open("/work")).toMatchObject({ _tag: "Success", value: "cursor" });
+
+  const onlyFileManager = useOpenInPreferredEditor(primary, ["file-manager"]);
+  expect(await onlyFileManager("/work")).toMatchObject({ _tag: "Success", value: "file-manager" });
+  expect(state.setPreference).not.toHaveBeenCalledWith(
+    expect.anything(),
+    "file-manager",
+    expect.anything(),
+  );
+});

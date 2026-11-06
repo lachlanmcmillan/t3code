@@ -1,4 +1,5 @@
 import {
+  AuthOrchestrationOperateScope,
   buildRemoteOpenUrl,
   type EditorId,
   type EnvironmentId,
@@ -12,6 +13,7 @@ import { isOpenFavoriteEditorShortcut } from "../../keybindings";
 import { announce } from "../../lib/announce";
 import { openRemoteEditorUrl, useRemoteCapableEditors, useRemoteOpenState } from "../../remoteOpen";
 import { registerCommands } from "../../shortcuts/dispatcher";
+import { readEnvironmentScope } from "../../state/session";
 import { shellEnvironment } from "../../state/shell";
 import { useAtomCommand } from "../../state/use-atom-command";
 
@@ -108,4 +110,34 @@ export function useOpenFavoriteEditorShortcut({
     preferredEditor,
     remote,
   ]);
+
+  // The file manager opens on the host, so remote links cannot reach it.
+  const canOpenFileManager =
+    enabled &&
+    remote.mode === "local-exec" &&
+    openInCwd !== null &&
+    availableEditors.includes("file-manager");
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the open-in-file-manager shortcut with the global keyboard dispatcher while it can act
+  useEffect(() => {
+    if (!canOpenFileManager || openInCwd === null) return;
+    return registerCommands(
+      {
+        "editor.openFileManager": (event) => {
+          if (event.repeat) return false;
+          if (!readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) return false;
+          event.preventDefault();
+          void openInEditorMutation({
+            environmentId,
+            input: { cwd: openInCwd, editor: "file-manager" },
+          }).then((result) => {
+            if (result._tag === "Success") {
+              announce(`Opened in ${editorLabelForPlatform("file-manager", navigator.platform)}`);
+            }
+          });
+        },
+      },
+      // Capture phase, so a focused terminal does not swallow the chord.
+      { capture: true },
+    );
+  }, [canOpenFileManager, environmentId, openInCwd, openInEditorMutation]);
 }

@@ -3,6 +3,12 @@
 Customize shortcuts in **Settings → Keybindings** on web and desktop. That page
 also lists the command IDs and defaults available in your version.
 
+## Open the thread's folder
+
+`mod+o` opens the thread's folder in your preferred editor, the one the **Open in** control
+shows. `mod+alt+r` opens it in Finder or File Explorer. Change them under **Editor: Open
+Favorite** and **Editor: Open File Manager**.
+
 ## Composer controls
 
 `mod+shift+d` starts dictation in the focused editor, or the composer, and finishes it on the next press;

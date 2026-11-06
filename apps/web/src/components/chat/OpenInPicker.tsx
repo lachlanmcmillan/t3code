@@ -281,6 +281,10 @@ export const OpenInPicker = memo(function OpenInPicker({
     keybindings,
     "editor.openFavorite",
   );
+  const openFileManagerShortcutLabel = shortcutLabelForCommand(
+    keybindings,
+    "editor.openFileManager",
+  );
 
   const backgroundThread = use(BackgroundThreadContext);
   const options = resolveOpenInOptions(navigator.platform, effectiveEditors);
@@ -313,7 +317,8 @@ export const OpenInPicker = memo(function OpenInPicker({
               disabled={!openInCwd || !canOpenEditor}
               key={value}
               onClick={() => {
-                if (presentation === "menu") {
+                // The file manager is never the preferred editor, so picking it opens it.
+                if (presentation === "menu" || value === "file-manager") {
                   void openInEditor(value);
                 } else {
                   setPreferredEditor(value);
@@ -322,9 +327,14 @@ export const OpenInPicker = memo(function OpenInPicker({
             >
               <Icon aria-hidden="true" className={getOpenInIconClass(kind)} />
               <MenuItemLabel>{label}</MenuItemLabel>
-              {value === preferredEditor && openFavoriteEditorShortcutLabel && (
-                <MenuShortcut>{openFavoriteEditorShortcutLabel}</MenuShortcut>
-              )}
+              {value === "file-manager"
+                ? openFileManagerShortcutLabel && (
+                    <MenuShortcut>{openFileManagerShortcutLabel}</MenuShortcut>
+                  )
+                : value === preferredEditor &&
+                  openFavoriteEditorShortcutLabel && (
+                    <MenuShortcut>{openFavoriteEditorShortcutLabel}</MenuShortcut>
+                  )}
             </MenuItem>
           ))}
           {remote.mode === "remote-links" && !remoteHintSeen && (

@@ -44,24 +44,38 @@ export class PreferredEditorUnavailableError extends Schema.TaggedError<Preferre
   }
 }
 
+/**
+ * The file manager has its own shortcut, so it is the preferred editor only when no real editor
+ * is installed. An older install may have stored it as the last editor.
+ */
+export function preferredEditorFrom(
+  stored: EditorId | null,
+  availableEditors: ReadonlyArray<EditorId>,
+): EditorId | null {
+  const candidates: ReadonlyArray<EditorId> = availableEditors.filter(
+    (id) => id !== "file-manager",
+  );
+  if (candidates.length === 0)
+    return availableEditors.includes("file-manager") ? "file-manager" : null;
+  if (stored && candidates.includes(stored)) return stored;
+  return EDITORS.find((editor) => candidates.includes(editor.id))?.id ?? null;
+}
+
 export function usePreferredEditor(availableEditors: ReadonlyArray<EditorId>) {
   const [lastEditor, setLastEditor] = useLocalStorage(LAST_EDITOR_KEY, null, EditorId);
-
-  const effectiveEditor =
-    lastEditor && availableEditors.includes(lastEditor)
-      ? lastEditor
-      : (EDITORS.find((editor) => availableEditors.includes(editor.id))?.id ?? null);
-
-  return [effectiveEditor, setLastEditor] as const;
+  const setPreferredEditor = (editor: EditorId) => {
+    if (editor !== "file-manager") setLastEditor(editor);
+  };
+  return [preferredEditorFrom(lastEditor, availableEditors), setPreferredEditor] as const;
 }
 
 function resolveAndPersistPreferredEditor(availableEditors: readonly EditorId[]): EditorId | null {
-  const availableEditorIds = new Set(availableEditors);
   const stored = getLocalStorageItem(LAST_EDITOR_KEY, EditorId);
-  if (stored && availableEditorIds.has(stored)) return stored;
-  const editor = EDITORS.find((editor) => availableEditorIds.has(editor.id))?.id ?? null;
-  if (editor) setLocalStorageItem(LAST_EDITOR_KEY, editor, EditorId);
-  return editor ?? null;
+  const editor = preferredEditorFrom(stored, availableEditors);
+  if (editor && editor !== stored && editor !== "file-manager") {
+    setLocalStorageItem(LAST_EDITOR_KEY, editor, EditorId);
+  }
+  return editor;
 }
 
 export function useOpenInPreferredEditor(
