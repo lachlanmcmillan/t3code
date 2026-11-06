@@ -1010,6 +1010,24 @@ export function resolveWindowTitleThreadStatus(thread: SidebarThreadStatusInput)
   }
 }
 
+/** The dot before a thread row's title, in the same colors as a closed folder's dot. */
+export function resolveSidebarThreadAttentionDot(input: {
+  status: SidebarThreadStatus;
+  isUnread: boolean;
+  isWoke: boolean;
+}): "attention" | "unread" | null {
+  if (
+    input.isWoke ||
+    input.status === "input" ||
+    input.status === "approval" ||
+    input.status === "request" ||
+    input.status === "limited"
+  ) {
+    return "attention";
+  }
+  return input.status === "ready" && input.isUnread ? "unread" : null;
+}
+
 /**
  * The dot on a closed boring-sidebar folder: the most urgent state among its
  * hidden threads. Waiting threads stay quiet, like their rows.

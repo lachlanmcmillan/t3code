@@ -85,6 +85,7 @@ import {
   hasUnseenCompletion,
   resolveSidebarRowAccessibility,
   type SidebarDropVerb,
+  resolveSidebarThreadAttentionDot,
   resolveSidebarThreadStatus,
   resolveThreadLastVisitedAt,
   shouldRecedeSidebarThread,
@@ -735,13 +736,16 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     wokeAtDate !== null &&
     (lastVisitedDate === null || lastVisitedDate < wokeAtDate) &&
     thread.settledOverride !== "settled";
-  const shouldRecede = shouldRecedeSidebarThread({
-    status,
-    isUnread,
-    isWoke,
-    isActive: props.isActive,
-    isSelected,
-  });
+  const attentionDot = resolveSidebarThreadAttentionDot({ status, isUnread, isWoke });
+  const shouldRecede =
+    attentionDot === null &&
+    shouldRecedeSidebarThread({
+      status,
+      isUnread,
+      isWoke,
+      isActive: props.isActive,
+      isSelected,
+    });
   const topStatus =
     status === "preparing" || status === "working"
       ? {
@@ -1042,7 +1046,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       aria-hidden
       className={cn(
         "min-w-0 flex-1 text-start text-sm transition-opacity motion-reduce:transition-none",
-        shouldRecede ? "font-normal" : "font-medium",
+        attentionDot ? "font-semibold" : shouldRecede ? "font-normal" : "font-medium",
         variant !== "slim"
           ? cn(
               "truncate",
@@ -1070,6 +1074,17 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     </span>
   );
   const accessibleTitle = isRenaming ? null : <span className="sr-only">{thread.title}</span>;
+  // The row's status label already names the state for screen readers.
+  const attentionDotIndicator =
+    attentionDot && !isRenaming ? (
+      <span
+        aria-hidden
+        className={cn(
+          "size-2 shrink-0 rounded-full",
+          attentionDot === "attention" ? "bg-warning" : "bg-success",
+        )}
+      />
+    ) : null;
 
   const prBadgeShape = supportsMultiplePullRequests
     ? resolveThreadPullRequestBadge(thread.pullRequests)
@@ -1274,6 +1289,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 </span>
               )}
               {draftIndicator}
+              {attentionDotIndicator}
               {title}
               {multiline ? titleLineIcons : null}
               {pinIndicator}
@@ -1599,6 +1615,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               {props.sweepAction !== null ? dragDestination : null}
             </div>
             <div className="mt-1 flex min-w-0 items-center gap-1.5">
+              {attentionDotIndicator}
               {title}
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">

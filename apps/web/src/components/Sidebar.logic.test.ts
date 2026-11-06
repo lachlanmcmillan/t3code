@@ -34,6 +34,7 @@ import {
   resolveSidebarDropVerb,
   groupSidebarThreadsByProject,
   resolveSidebarFolderDot,
+  resolveSidebarThreadAttentionDot,
   sidebarFolderExpansionKeys,
 } from "./Sidebar.logic";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
@@ -1657,6 +1658,21 @@ describe("resolveSidebarFolderDot", () => {
     expect(resolveSidebarFolderDot([idle, working])).toBe("working");
     expect(resolveSidebarFolderDot([working, unread])).toBe("unread");
     expect(resolveSidebarFolderDot([unread, limited])).toBe("attention");
+  });
+
+  it.each([
+    { status: "input", isUnread: false, isWoke: false, dot: "attention" },
+    { status: "approval", isUnread: false, isWoke: false, dot: "attention" },
+    { status: "request", isUnread: false, isWoke: false, dot: "attention" },
+    { status: "limited", isUnread: false, isWoke: false, dot: "attention" },
+    { status: "ready", isUnread: false, isWoke: true, dot: "attention" },
+    { status: "ready", isUnread: true, isWoke: false, dot: "unread" },
+    { status: "ready", isUnread: false, isWoke: false, dot: null },
+    // Waiting and working rows stay quiet, like their folder's dot.
+    { status: "waiting", isUnread: true, isWoke: false, dot: null },
+    { status: "working", isUnread: false, isWoke: false, dot: null },
+  ] as const)("marks a $status row (unread $isUnread, woke $isWoke) with $dot", (row) => {
+    expect(resolveSidebarThreadAttentionDot(row)).toBe(row.dot);
   });
 });
 
