@@ -2,6 +2,7 @@ import type { FileDiffMetadata } from "@pierre/diffs";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  fileAtScrollTop,
   getFileViewedRange,
   isFileDiffCollapsed,
   isLineInFileDiff,
@@ -82,5 +83,30 @@ describe("getFileViewedRange", () => {
     expect(getFileViewedRange(files, "a.ts", null)).toEqual([files[1]]);
     expect(getFileViewedRange(files, "a.ts", "removed.ts")).toEqual([files[1]]);
     expect(getFileViewedRange(files, "removed.ts", "a.ts")).toEqual([]);
+  });
+});
+
+describe("fileAtScrollTop", () => {
+  const tops = new Map([
+    ["a.ts", 0],
+    ["b.ts", 100],
+    ["c.ts", 400],
+  ]);
+  const files = [...tops.keys()];
+  const topOf = (fileKey: string) => tops.get(fileKey);
+
+  it("finds the file the viewport starts in and the distance into it", () => {
+    expect(fileAtScrollTop(files, 0, topOf)).toEqual({ fileKey: "a.ts", offset: 0 });
+    expect(fileAtScrollTop(files, 250, topOf)).toEqual({ fileKey: "b.ts", offset: 150 });
+    expect(fileAtScrollTop(files, 400, topOf)).toEqual({ fileKey: "c.ts", offset: 0 });
+    expect(fileAtScrollTop(files, 900, topOf)).toEqual({ fileKey: "c.ts", offset: 500 });
+  });
+
+  it("treats files the viewer has not laid out as below the viewport", () => {
+    expect(fileAtScrollTop([...files, "d.ts"], 900, topOf)).toEqual({
+      fileKey: "c.ts",
+      offset: 500,
+    });
+    expect(fileAtScrollTop([], 0, topOf)).toBeNull();
   });
 });

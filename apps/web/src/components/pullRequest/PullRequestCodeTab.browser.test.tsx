@@ -109,6 +109,8 @@ vi.mock(import("~/state/pullRequests"), async (original) => {
 
 import { render } from "../../../test/render";
 import PullRequestCodeTab from "./PullRequestCodeTab";
+import { readPullRequestCodeView } from "./pullRequestCodeViewMemory";
+import { pullRequestReviewKey } from "./pullRequestReviewStore";
 
 const detail: PullRequestDetailView = {
   provider: SourceControlProviderKind.make("github"),
@@ -171,15 +173,17 @@ function setup({ paged }: { paged: boolean }) {
   mocks.viewedListeners.clear();
 }
 
+// Each test names its own environment: the tab remembers its view per environment and diff.
 const tab = (
-  refreshToken: number,
+  environment: string,
+  refreshToken = 0,
   revealRequest: { readonly path: string; readonly nonce: number } | null = null,
   revealUrl?: string,
   onRevealSettled?: (url: string) => void,
 ) => (
   <PullRequestCodeTab
     scrollerRef={() => {}}
-    environmentId={EnvironmentId.make("environment")}
+    environmentId={EnvironmentId.make(environment)}
     reference={detail}
     detail={detail}
     selectedCommitOid={null}
@@ -196,10 +200,10 @@ it("keeps the diff after a refresh that brings back the same page", async () => 
   setup({ paged: false });
   const container = document.createElement("div");
   container.className = "flex h-[700px] w-[900px]";
-  await using screen = await render(tab(0), { container });
+  await using screen = await render(tab("refresh"), { container });
   await expect.element(screen.getByText("1 file", { exact: true })).toBeVisible();
 
-  await screen.rerender(tab(1));
+  await screen.rerender(tab("refresh", 1));
 
   await expect
     .element(screen.getByText("This pull request has no file changes."))
@@ -219,7 +223,9 @@ it("keeps a revealed file open when its Viewed mark loads afterwards", async () 
   mocks.viewedPaths = new Set();
   const container = document.createElement("div");
   container.className = "flex h-[700px] w-[900px]";
-  await using screen = await render(tab(0, { path: "a.ts", nonce: 1 }), { container });
+  await using screen = await render(tab("viewed-fold", 0, { path: "a.ts", nonce: 1 }), {
+    container,
+  });
   await expect.element(screen.getByText("three()", { exact: true })).toBeVisible();
 
   deliverViewedPaths(new Set(["a.ts"]));
@@ -255,7 +261,9 @@ async function expectFileHeaderShown(
 it("scrolls to a file asked for as the tab opens", async () => {
   setup({ paged: true });
   const container = pagedContainer();
-  await using screen = await render(tab(0, { path: "early-39.ts", nonce: 1 }), { container });
+  await using screen = await render(tab("reveal-on-open", 0, { path: "early-39.ts", nonce: 1 }), {
+    container,
+  });
 
   await expectFileHeaderShown(screen, container, "early-39.ts");
 });
@@ -270,21 +278,56 @@ it("pages forward to a file asked for that is not loaded yet, then scrolls to it
     },
   };
   const container = pagedContainer();
-  await using screen = await render(tab(0), { container });
+  await using screen = await render(tab("reveal-later"), { container });
   await expect.element(screen.getByText("early-0.ts", { exact: true }).first()).toBeVisible();
   await screen.getByRole("button", { name: "Hide test files" }).click();
 
   const url = `${detail.url}/files#diff-${bytesToHex(sha256(new TextEncoder().encode("late.test.ts")))}R4-R5`;
   const settled = vi.fn();
-  await screen.rerender(tab(0, null, url, settled));
+  await screen.rerender(tab("reveal-later", 0, null, url, settled));
 
   await expectFileHeaderShown(screen, container, "late.test.ts");
   await expect.element(screen.getByText("three()", { exact: true })).toBeVisible();
   await vi.waitFor(() => expect(settled).toHaveBeenCalledWith(url));
   // A settled link keeps its test file past the filter, and a later click reveals it again.
-  await screen.rerender(tab(0, { path: "early-0.ts", nonce: 1 }));
+  await screen.rerender(tab("reveal-later", 0, { path: "early-0.ts", nonce: 1 }));
   await expectFileHeaderShown(screen, container, "early-0.ts");
-  await screen.rerender(tab(0, { path: "early-0.ts", nonce: 1 }, url, settled));
+  await screen.rerender(tab("reveal-later", 0, { path: "early-0.ts", nonce: 1 }, url, settled));
+  await expectFileHeaderShown(screen, container, "late.test.ts");
+});
+
+it("keeps the files opened or folded after the tab remounts", async () => {
+  setup({ paged: false });
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, diffFilesCollapsed: true });
+  using _preferences = {
+    [Symbol.dispose]() {
+      __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+    },
+  };
+  await using first = await render(tab("remount-fold"), { container: pagedContainer() });
+  await first.getByRole("button", { name: "Expand diff" }).click();
+  await expect.element(first.getByRole("button", { name: "Collapse diff" })).toBeVisible();
+  await first.unmount();
+
+  await using screen = await render(tab("remount-fold"), { container: pagedContainer() });
+
+  await expect.element(screen.getByRole("button", { name: "Collapse diff" })).toBeVisible();
+});
+
+it("returns to the file it was scrolled to after the tab remounts, paging forward to it", async () => {
+  setup({ paged: true });
+  await using first = await render(tab("remount-scroll", 0, { path: "late.test.ts", nonce: 1 }), {
+    container: pagedContainer(),
+  });
+  await expectFileHeaderShown(first, first.container, "late.test.ts");
+  // The viewer reports its scroll after painting; leave only once the position is remembered.
+  const scopeKey = JSON.stringify(["remount-scroll", pullRequestReviewKey(detail), null]);
+  await vi.waitFor(() => expect(readPullRequestCodeView(scopeKey)?.scroll).toBeTruthy());
+  await first.unmount();
+
+  const container = pagedContainer();
+  await using screen = await render(tab("remount-scroll"), { container });
+
   await expectFileHeaderShown(screen, container, "late.test.ts");
 });
 

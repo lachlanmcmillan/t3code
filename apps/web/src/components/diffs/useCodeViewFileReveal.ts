@@ -66,6 +66,7 @@ export function createCodeViewFileReveal() {
   let pending: {
     id: string;
     range?: SelectedLineRange;
+    offset?: number;
     positionedFile?: boolean;
     loadingFile?: boolean;
     settling?: boolean;
@@ -73,7 +74,13 @@ export function createCodeViewFileReveal() {
   const flush = () => {
     if (pending === null || viewer === null) return;
     const item = viewer.getItem(pending.id);
-    if (!viewer.getInstance() || item === undefined || item.collapsed === true) return;
+    // A reveal unfolds its file first; a restored position keeps the file as it was left.
+    if (
+      !viewer.getInstance() ||
+      item === undefined ||
+      (item.collapsed === true && pending.offset === undefined)
+    )
+      return;
     const renderedItems = viewer.getInstance()?.getRenderedItems?.();
     if (pending.range && renderedItems) {
       const rendered = renderedItems.find((entry) => entry.id === pending?.id);
@@ -142,7 +149,13 @@ export function createCodeViewFileReveal() {
     viewer.scrollTo(
       target.range
         ? { type: "range", id: target.id, range: target.range, align: "center" }
-        : { type: "item", id: target.id, align: "start" },
+        : {
+            type: "item",
+            id: target.id,
+            align: "start",
+            // A start-aligned item target lands at its top minus `offset`.
+            ...(target.offset ? { offset: -target.offset } : {}),
+          },
     );
   };
   return {
@@ -163,8 +176,13 @@ export function createCodeViewFileReveal() {
       viewer = next;
       flush();
     },
-    request(fileKey: string, range?: SelectedLineRange) {
-      pending = { id: fileKey, ...(range ? { range } : {}) };
+    /** `offset` restores a viewport that starts that far below the file's top edge. */
+    request(fileKey: string, range?: SelectedLineRange, offset?: number) {
+      pending = {
+        id: fileKey,
+        ...(range ? { range } : {}),
+        ...(offset === undefined ? {} : { offset }),
+      };
       flush();
     },
     /** The user scrolled; a reveal still being positioned must not pull them back. */

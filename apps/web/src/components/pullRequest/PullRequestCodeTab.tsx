@@ -122,6 +122,7 @@ import {
 } from "./PullRequestReviewAnnotation";
 import { pullRequestCompletionScope } from "./PullRequestMarkdownTextarea";
 import {
+  fileAtScrollTop,
   getFileViewedRange,
   isFileDiffCollapsed,
   isLineInFileDiff,
@@ -129,6 +130,7 @@ import {
   type DiffFoldOverride,
   type FileDiffFoldChoices,
 } from "./pullRequestDiff.logic";
+import { readPullRequestCodeView, rememberPullRequestCodeView } from "./pullRequestCodeViewMemory";
 import { PullRequestDiffStat, PullRequestMetaLine } from "./pullRequestPresentation";
 import { PullRequestDiffUnavailableState } from "./PullRequestDiffUnavailableState";
 import { usePullRequestFilesViewed } from "./usePullRequestFilesViewed";
@@ -388,10 +390,26 @@ function PullRequestCodeTab({
     diffLayout: settings.diffLayout,
     wordWrap: settings.wordWrap,
   }));
-  const [foldChoices, setFoldChoices] = useState<FileDiffFoldChoices>(() => new Map());
+  const referenceKey = pullRequestReviewKey(reference);
+  // A commit opened from the timeline or left selected across a force-push may no longer be
+  // part of the pull request; read it as "All commits" instead of requesting its diff.
+  const commit =
+    selectedCommitOid !== null && detail.commits.some((entry) => entry.oid === selectedCommitOid)
+      ? selectedCommitOid
+      : null;
+  const scopeKey = JSON.stringify([environmentId, referenceKey, commit]);
+  const [foldChoices, setFoldChoices] = useState<FileDiffFoldChoices>(
+    () => readPullRequestCodeView(scopeKey)?.foldChoices ?? new Map(),
+  );
   const [lastViewedFileKey, setLastViewedFileKey] = useState<string | null>(null);
   const [visibleCommitCount, setVisibleCommitCount] = useState(COMMIT_PAGE_SIZE);
-  const [foldOverride, setFoldOverride] = useState<DiffFoldOverride>(null);
+  const [foldOverride, setFoldOverride] = useState<DiffFoldOverride>(
+    () => readPullRequestCodeView(scopeKey)?.foldOverride ?? null,
+  );
+  // An explicit reveal on open outranks returning to where the view was left.
+  const [scrollRestore, setScrollRestore] = useState(() =>
+    revealRequest === null ? (readPullRequestCodeView(scopeKey)?.scroll ?? null) : null,
+  );
   const effectiveFoldOverride =
     foldOverride ?? (settings.diffFilesCollapsed ? "folded" : "expanded");
   const diffLayout = settings.diffLayout;
@@ -417,24 +435,18 @@ function PullRequestCodeTab({
     readonly slices: ReadonlyArray<DiffSlice>;
   }>({ key: "", cursor: null, slices: NO_SLICES });
 
-  const referenceKey = pullRequestReviewKey(reference);
-  // A commit opened from the timeline or left selected across a force-push may no longer be
-  // part of the pull request; read it as "All commits" instead of requesting its diff.
-  const commit =
-    selectedCommitOid !== null && detail.commits.some((entry) => entry.oid === selectedCommitOid)
-      ? selectedCommitOid
-      : null;
-  const scopeKey = JSON.stringify([environmentId, referenceKey, commit]);
   // The panel keeps this mounted across pull requests, so an open composer would otherwise
   // survive the switch and attach its comment to whichever one is on screen when it is sent.
   const [stateScopeKey, setStateScopeKey] = useState(scopeKey);
   if (stateScopeKey !== scopeKey) {
+    const remembered = readPullRequestCodeView(scopeKey);
     setStateScopeKey(scopeKey);
     setLastViewedFileKey(null);
     setDraft(null);
     setSelectedLines(null);
-    setFoldChoices(new Map());
-    setFoldOverride(null);
+    setFoldChoices(remembered?.foldChoices ?? new Map());
+    setFoldOverride(remembered?.foldOverride ?? null);
+    setScrollRestore(remembered?.scroll ?? null);
     setVisibleCommitCount(COMMIT_PAGE_SIZE);
     setOrphansOpen(false);
     setSliceState({ key: scopeKey, cursor: null, slices: NO_SLICES });
@@ -564,6 +576,10 @@ function PullRequestCodeTab({
 
   const codeViewReveal = useCodeViewFileReveal();
   const answeredRevealNonce = useRef<number | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- fold choices outlive this tab, which the right panel unmounts when another surface is active
+  useEffect(() => {
+    rememberPullRequestCodeView(scopeKey, { foldChoices, foldOverride });
+  }, [scopeKey, foldChoices, foldOverride]);
 
   const loadDiffFiles = createPullRequestDiffFileContentsLoader(getDiffFileContents, {
     environmentId,
@@ -1465,10 +1481,27 @@ function PullRequestCodeTab({
       </div>
     </div>
   );
+  // Pages forward only as far as the view had loaded; a file since dropped from the diff is not
+  // worth fetching every remaining page for.
+  const restoreScroll = () => {
+    if (scrollRestore === null) return;
+    if (loadedSlices.length < scrollRestore.pages && (canLoadNextSlice || diffQuery.isPending)) {
+      if (canLoadNextSlice) loadNextSlice();
+      return;
+    }
+    if (items.some((item) => item.id === scrollRestore.fileKey)) {
+      codeViewReveal.request(scrollRestore.fileKey, undefined, scrollRestore.offset);
+    }
+    setScrollRestore(null);
+  };
   // A file not loaded yet pages forward each time a slice arrives; once loaded, the viewer
   // positions it when it renders it.
   const answerReveal = useEffectEvent(() => {
-    if (revealRequest === null || answeredRevealNonce.current === revealRequest.nonce) return;
+    if (revealRequest === null || answeredRevealNonce.current === revealRequest.nonce) {
+      restoreScroll();
+      return;
+    }
+    if (scrollRestore !== null) setScrollRestore(null);
     if (!items.some((item) => resolveFileDiffPath(item.fileDiff) === revealRequest.path)) {
       if (canLoadNextSlice) loadNextSlice();
       return;
@@ -1476,17 +1509,18 @@ function PullRequestCodeTab({
     answeredRevealNonce.current = revealRequest.nonce;
     revealFile(revealRequest.path);
   });
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the code view to a requested file once loaded, or pages forward until it arrives
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the code view to a requested or remembered file once loaded, or pages forward until it arrives
   useEffect(() => {
     // oxlint-disable-next-line react/set-state-in-effect -- A reveal for a file not loaded yet pages forward, which sets the slice cursor.
     answerReveal();
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Re-checked as pages load until the requested file arrives.
-  }, [canLoadNextSlice, items, revealRequest]);
+  }, [canLoadNextSlice, items, revealRequest, scrollRestore]);
   // The store clears a settled link after this render, so one link must not reveal twice.
   const answeredLink = useRef<string | null>(null);
   const revealLink = useEffectEvent(() => {
     if (revealUrl === undefined) answeredLink.current = null;
     if (revealUrl === undefined || linkAnchor?.kind !== "diff") return;
+    if (scrollRestore !== null) setScrollRestore(null);
     // The panel selects the link's commit after this tab's effects run, so the files on screen
     // can still be another commit's.
     const linkCommit = pullRequestLinkCommit(revealUrl);
@@ -1664,6 +1698,16 @@ function PullRequestCodeTab({
               className="@container h-full overflow-auto [scrollbar-gutter:stable]"
               containerRef={scrollerRef}
               viewerRef={codeViewReveal.attach}
+              onScroll={(scrollTop, viewer) => {
+                // Until the remembered file is back, scrolling is the viewer settling, not the user.
+                if (scrollRestore !== null) return;
+                const position = fileAtScrollTop(fileKeys, scrollTop, (fileKey) =>
+                  viewer.getTopForItem(fileKey),
+                );
+                rememberPullRequestCodeView(scopeKey, {
+                  scroll: position && { ...position, pages: loadedSlices.length },
+                });
+              }}
               items={items}
               selectedLines={selectedLines}
               onSelectedLinesChange={setSelectedLines}

@@ -35,6 +35,16 @@ describe("createCodeViewFileReveal", () => {
     expect(view.scrolls.at(-1)).toEqual({ type: "range", id: "a", range, align: "center" });
   });
 
+  it("lands the viewport the requested distance below the file's top", () => {
+    const reveal = createCodeViewFileReveal();
+    const view = viewer(["a"]);
+    reveal.attach(view);
+
+    reveal.request("a", undefined, 120);
+
+    expect(view.scrolls).toEqual([{ type: "item", id: "a", align: "start", offset: -120 }]);
+  });
+
   it("keeps a missing file pending until a flush finds it, then drops it", () => {
     const reveal = createCodeViewFileReveal();
     const view = viewer([]);

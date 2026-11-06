@@ -52,3 +52,29 @@ export function getFileViewedRange<T extends { readonly fileKey: string }>(
   if (anchorIndex === -1) return files.slice(index, index + 1);
   return files.slice(Math.min(index, anchorIndex), Math.max(index, anchorIndex) + 1);
 }
+
+/**
+ * The file at a scroll position and how far into it the viewport starts. Files are in layout
+ * order; one the viewer has not laid out yet counts as below the position.
+ */
+export function fileAtScrollTop(
+  fileKeys: ReadonlyArray<string>,
+  scrollTop: number,
+  topOf: (fileKey: string) => number | undefined,
+): { readonly fileKey: string; readonly offset: number } | null {
+  let found: { readonly fileKey: string; readonly offset: number } | null = null;
+  let low = 0;
+  let high = fileKeys.length - 1;
+  while (low <= high) {
+    const middle = (low + high) >>> 1;
+    const fileKey = fileKeys[middle]!;
+    const top = topOf(fileKey);
+    if (top !== undefined && top <= scrollTop) {
+      found = { fileKey, offset: scrollTop - top };
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return found;
+}
