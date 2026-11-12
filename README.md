@@ -1,3 +1,19 @@
+# Fork changes
+
+Changes on top of [pingdotgg/t3code](https://github.com/pingdotgg/t3code). Build this checkout to use them ([Desktop artifacts](docs/operations/development.md#desktop-artifacts)).
+
+- **Per-project worktree location:** each project can put its worktrees in its own folder, like `.worktrees` inside the repo, instead of the shared folder for the whole machine.
+- **Pick an existing folder:** start a thread in a checkout or worktree that already exists, instead of always getting a new one.
+- **`worktree-<hex>` branches:** temporary branches no longer start with `t3/` or `t3code/`.
+- **Expand by default:** thinking and tool output start open instead of collapsed.
+- **Sidebar dot:** threads waiting on you, or finished and unread, get a dot and a bold title.
+- **Actions in the side panel:** an action like `bun dev` can open its terminal in the side panel instead of the bottom drawer.
+- **Folder shortcuts:** `mod+o` opens the thread's folder in your editor, and `mod+alt+r` opens it in Finder.
+- **PR Code tab memory:** switching to another side-panel tab and back no longer resets your scroll position or which files are open.
+- **Composer context row:** the environment, worktree and branch row under the composer shares the composer's background instead of having its own.
+
+---
+
 <p align="center">
   <a href="https://t3.codes">
     <img src="./assets/prod/t3-black-web-icon-192x192.png" width="80" height="80" alt="T3 Code logo" />
@@ -22,52 +38,6 @@
     <img src="./.github/readme/hero.webp" width="100%" alt="T3 Code on desktop with a finished Claude thread, next to the phone app asking to approve a command from Codex" />
   </a>
 </p>
-
-## Fork changes
-
-This fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code) adds the following
-behavior on top of upstream:
-
-- **Per-project worktree locations.** Select a project in Settings, then in **Worktrees →
-  Project worktree location**, choose a base folder for it. Relative paths such as
-  `.worktrees` start at the project checkout; absolute paths and `~/…` are also supported.
-  New worktrees get a branch-named subfolder, with `/` in branch names replaced by `-`.
-  Leaving the setting empty inherits the environment's worktree location. The setting is
-  available on web, desktop, and mobile and applies to new threads, manual creation, pull
-  request worktrees, MCP tools, and scheduled tasks. Review diffs and automatic cleanup
-  support these folders; existing worktrees stay where they are.
-- **Select an existing workspace folder.** Before starting a thread on web or desktop,
-  choose **Workspace → Select folder…** to browse to an existing checkout or worktree.
-  Both the full and compact workspace menus, and the thread details panel, support this.
-  Browsing happens on the selected environment, including remote servers. The picker
-  checks that the folder belongs to a source control repository and uses its current branch.
-  Choosing the project checkout again clears the selected worktree.
-- **Temporary branches without a namespace.** New temporary worktree branches use
-  `worktree-<8 hex>` instead of `t3/<8 hex>` or `t3code/<8 hex>`. Legacy temporary branch
-  names remain recognized so existing threads can still receive generated branch names.
-- **Optional default expansion for thinking and tools.** Enable **Expand thinking by
-  default** and **Expand tool output by default** in **Settings → Chat**. These device
-  preferences open
-  thinking traces and tool commands/output automatically. Both are off by default, and
-  individual items can still be collapsed.
-- **Expansion preferences after completed turns.** Default expansion also applies to
-  completed turns and their grouped work. Finishing a turn does not hide the thinking or
-  tool output enabled by those preferences; groups and individual items can still be
-  collapsed and reopened.
-
-### Earlier fork changes now provided by upstream
-
-- **Generated branch names without a prefix.** Our original patch is now covered by
-  **Settings → Source control → Worktree branch naming → Static prefix**. Clear
-  **Branch prefix** to generate names without `t3/`. This requires configuring the
-  setting; upstream's default still adds the prefix.
-- **Full output for expanded tool calls.** Upstream now loads the full saved command and
-  output when a tool call is expanded, replacing our original patch.
-
-The installation links below install upstream builds. To use these fork changes, build
-this checkout; see [Desktop artifacts](docs/operations/development.md#desktop-artifacts).
-
----
 
 T3 Code runs the coding agents on your machine and gives them one fast interface. Start a thread at your desk, then approve the next step from your phone.
 
