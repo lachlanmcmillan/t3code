@@ -69,6 +69,7 @@ describe("projectScripts helpers", () => {
       waitForSetup: false,
       previewUrl: null,
       autoOpenPreview: false,
+      openInPanel: false,
     } as const;
     const holder = {
       id: "holder",

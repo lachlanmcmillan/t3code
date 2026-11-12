@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { findReusableProjectScriptTerminal } from "./projectScriptTerminal";
+import type { RightPanelSurface } from "../rightPanelStore";
+import {
+  findReusablePanelScriptTerminal,
+  findReusableProjectScriptTerminal,
+} from "./projectScriptTerminal";
 
 describe("findReusableProjectScriptTerminal", () => {
   it.each([
@@ -40,5 +44,46 @@ describe("findReusableProjectScriptTerminal", () => {
     expect(
       findReusableProjectScriptTerminal({ ...input, panelTerminalIds: new Set(panelTerminalIds) }),
     ).toBe(expected);
+  });
+});
+
+const terminalSurface = (id: `terminal:${string}`, terminalIds: string[]): RightPanelSurface => ({
+  id,
+  kind: "terminal",
+  resourceId: terminalIds[0]!,
+  terminalIds,
+  activeTerminalId: terminalIds[0]!,
+});
+
+describe("findReusablePanelScriptTerminal", () => {
+  it.each([
+    {
+      name: "prefers the active idle panel terminal",
+      surfaces: [terminalSurface("terminal:a", ["a"]), terminalSurface("terminal:b", ["b"])],
+      activeSurfaceId: "terminal:b",
+      runningTerminalIds: [],
+      expected: "b",
+    },
+    {
+      name: "skips running, split, and renamed surfaces",
+      surfaces: [
+        terminalSurface("terminal:a", ["a"]),
+        terminalSurface("terminal:b", ["b", "c"]),
+        terminalSurface("terminal:d", ["e"]),
+        terminalSurface("terminal:f", ["f"]),
+      ],
+      activeSurfaceId: "terminal:a",
+      runningTerminalIds: ["a"],
+      expected: "f",
+    },
+    {
+      name: "finds nothing when every panel terminal is busy",
+      surfaces: [terminalSurface("terminal:a", ["a"])],
+      activeSurfaceId: null,
+      runningTerminalIds: ["a"],
+      expected: null,
+    },
+  ])("$name", ({ expected, ...input }) => {
+    expect(findReusablePanelScriptTerminal(input)).toBe(expected);
   });
 });

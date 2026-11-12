@@ -74,6 +74,7 @@ const input: NewProjectScriptInput = {
   runOnSettle: false,
   previewUrl: null,
   autoOpenPreview: false,
+  openInPanel: false,
 };
 
 type ProjectScriptSettings = ReturnType<typeof useProjectScriptSettings>;

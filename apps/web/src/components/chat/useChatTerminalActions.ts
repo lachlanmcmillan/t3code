@@ -33,7 +33,10 @@ import { isPreviewAvailableFor } from "../../browser/previewRuntime";
 import { resolveDiscoveredServerUrl } from "../../browser/browserTargetResolver";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { confirmTerminalClose } from "../../lib/terminalCloseConfirm";
-import { findReusableProjectScriptTerminal } from "../../lib/projectScriptTerminal";
+import {
+  findReusablePanelScriptTerminal,
+  findReusableProjectScriptTerminal,
+} from "../../lib/projectScriptTerminal";
 import { type TerminalContextSelection } from "../../lib/terminalContext";
 import {
   focusActiveDrawerTerminal,
@@ -53,6 +56,14 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import type { ChatShortcutCommands } from "./useChatShortcuts";
 const SCRIPT_TERMINAL_COLS = 120;
 const SCRIPT_TERMINAL_ROWS = 30;
+
+const panelSurfacesFor = (ref: ScopedThreadRef | null) => {
+  const { surfaces, activeSurfaceId } = selectThreadRightPanelState(
+    useRightPanelStore.getState().byThreadKey,
+    ref,
+  );
+  return { surfaces, activeSurfaceId };
+};
 
 export interface TerminalLaunchContext {
   threadId: ThreadId;
@@ -217,12 +228,19 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
       });
     }
     const targetCwd = options?.cwd ?? gitCwd ?? activeProject.workspaceRoot;
-    const reusableTerminalId =
-      script.stopOnSettle ||
-      options?.preferNewTerminal ||
-      !canReuseTerminal ||
-      !readEnvironmentScope(environmentId, AuthTerminalReadScope)
-        ? null
+    const inPanel = script.openInPanel === true;
+    const canReuse =
+      !script.stopOnSettle &&
+      !options?.preferNewTerminal &&
+      canReuseTerminal &&
+      readEnvironmentScope(environmentId, AuthTerminalReadScope);
+    const reusableTerminalId = !canReuse
+      ? null
+      : inPanel
+        ? findReusablePanelScriptTerminal({
+            ...panelSurfacesFor(activeThreadRef),
+            runningTerminalIds,
+          })
         : findReusableProjectScriptTerminal({
             // Server sessions cover drawer terminals this client has not opened yet, such as a
             // worktree setup shell; the helper drops the panel-owned ones.
@@ -248,9 +266,11 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
       // The drawer opens with the target already placed: opening it empty would claim
       // DEFAULT_THREAD_TERMINAL_ID, which a right-panel terminal may already own.
       place: (terminalId) =>
-        reusableTerminalId === null
-          ? storeNewTerminal(activeThreadRef, terminalId)
-          : storeEnsureTerminal(activeThreadRef, terminalId, { open: true }),
+        inPanel
+          ? useRightPanelStore.getState().openTerminal(activeThreadRef, terminalId)
+          : reusableTerminalId === null
+            ? storeNewTerminal(activeThreadRef, terminalId)
+            : storeEnsureTerminal(activeThreadRef, terminalId, { open: true }),
       ...(reusableTerminalId === null
         ? { size: { cols: SCRIPT_TERMINAL_COLS, rows: SCRIPT_TERMINAL_ROWS } }
         : { terminalId: reusableTerminalId }),
